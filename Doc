@@ -98,3 +98,28 @@ Clustering: By country column — improves performance for country-level queries
 
 
 ---
+
+🔷 Challenges Faced
+
+Ensuring the schema consistency between CSV, Avro, and BigQuery table.
+(Mismatch or extra/missing columns, type inference errors when reading CSV, etc.)
+
+Managing large data volumes: generating and processing 100+ million rows took significant time; required optimization (parallelism, chunk size, etc.).
+
+Handling CSV formatting issues, such as quoted fields (e.g., address) causing data to shift columns.
+
+Columns with inferred incorrect datatypes when reading CSV without schema (strings showing as integers).
+
+Setting up correct partitioning strategy in BigQuery: understanding ingestion-time vs snapshot-date, and how to load when column is absent in data.
+
+Missing or insufficient permissions: initially could not download service account keys or write to GCS bucket.
+
+Avro files generated but data appeared blank or null because of schema mismatch.
+
+Performance issues when running jobs on single core/low parallelism environment.
+
+Lack of edit permissions in Confluence to document progress.
+
+Familiarity with BigQuery limitations: e.g., number of partitions, renaming partitions, external vs native tables.
+
+
