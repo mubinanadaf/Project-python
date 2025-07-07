@@ -1,0 +1,100 @@
+🔷 Overview
+
+This document describes the end-to-end synthetic data pipeline built to generate, process, and load test customer data into a BigQuery table for analytics and validation purposes.
+The pipeline ensures large-scale synthetic datasets (up to 100 million records) are created and loaded efficiently into BigQuery, following partitioning and clustering best practices.
+
+
+---
+
+🔷 Objectives
+
+Generate synthetic customer data with 50 realistic columns using faker.
+
+Support large record volumes for testing and validation.
+
+Automate conversion of CSV to Avro & metadata formats.
+
+Deliver files through the CDMP platform into GCS.
+
+Load data into a partitioned and clustered BigQuery table using Cloud Composer DAG.
+
+
+
+---
+
+🔷 End-to-End Workflow
+
+1️⃣ Synthetic Data Generation (Launchpad Server)
+
+Synthetic customer data is generated on the Launchpad server.
+
+The data generation is implemented in Python and uses a faker-based schema.
+
+Data is generated in CSV format, saved to the outbound path on Launchpad.
+
+Configurable number of records (tested with up to 100 million records).
+
+
+2️⃣ CSV → Avro & Metadata Conversion (Launchpad Server)
+
+Once the CSV file is created, it is converted to Avro format with corresponding metadata files (.ctl and .toc).
+
+Conversion is done using a PySpark job, which:
+
+Reads the CSV.
+
+Applies a predefined custom schema.
+
+Writes Avro and metadata files to the same outbound path.
+
+
+
+3️⃣ CDMP Processing & Delivery to GCS
+
+The CDMP team picks up the Avro and metadata files from the outbound path.
+
+CDMP validates, processes, and delivers the files to the inbound GCS bucket path configured for ingestion.
+
+
+4️⃣ BigQuery Table Load via Cloud Composer
+
+A Cloud Composer DAG is triggered when files arrive in the GCS inbound path.
+
+The DAG loads the Avro data into the BigQuery target table.
+
+The BigQuery table is configured as:
+
+Partitioned by ingestion time (_PARTITIONTIME).
+
+Clustered by the country column.
+
+
+The DAG ensures efficient and reliable loading of partitioned and clustered data into BigQuery.
+
+
+
+---
+
+🔷 Key Components
+
+Component	Role
+
+Launchpad Server	Runs Python data generator & PySpark Avro converter. Produces files in outbound path.
+CDMP Team	Picks up files from Launchpad outbound, processes them, and places them in GCS inbound.
+Google Cloud Storage	Acts as staging for inbound files before loading into BigQuery.
+BigQuery	Stores the final table, partitioned & clustered for query optimization.
+Cloud Composer	Orchestrates GCS-to-BigQuery load process.
+
+
+
+---
+
+🔷 BigQuery Table Design
+
+Partitioning: By ingestion time (_PARTITIONTIME) — enables querying by load date.
+
+Clustering: By country column — improves performance for country-level queries.
+
+
+
+---
