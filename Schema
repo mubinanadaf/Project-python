@@ -1,0 +1,27 @@
+ORDERS_SCHEMA = [
+    {"name": "order_id", "type": "id"},
+    {"name": "customer_id", "type": "id"},  # Foreign key to CUSTOMERS_SCHEMA
+    {"name": "order_date", "type": "date_this_decade"},
+    {"name": "ship_date", "type": "date_this_decade"},
+    {"name": "delivery_date", "type": "date_this_decade"},
+    {"name": "order_status", "type": "order_status"},  # custom generator: e.g., Pending, Shipped, Delivered
+    {"name": "payment_method", "type": "credit_card_provider"},  # e.g., Visa, MasterCard
+    {"name": "shipping_address", "type": "address"},
+    {"name": "billing_address", "type": "address"},
+    {"name": "product_id", "type": "ean13"},  # barcode/product code
+    {"name": "product_name", "type": "word"},
+    {"name": "category", "type": "industry"},
+    {"name": "quantity", "type": "small_positive_integer"},
+    {"name": "unit_price", "type": "positive_integer"},
+    {"name": "total_price", "type": "positive_integer"},  # quantity × unit_price
+    {"name": "currency", "type": "currency_code"},  # USD, EUR
+    {"name": "discount", "type": "positive_integer"},
+    {"name": "tax", "type": "positive_integer"},
+    {"name": "shipping_cost", "type": "positive_integer"},
+    {"name": "grand_total", "type": "positive_integer"},  # total_price + tax + shipping - discount
+    {"name": "sales_channel", "type": "word"},  # e.g., Online, Retail
+    {"name": "sales_rep", "type": "name"},
+    {"name": "region", "type": "country"},
+    {"name": "tracking_number", "type": "uuid4"},
+    {"name": "return_status", "type": "boolean"},  # whether returned or not
+]
