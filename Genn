@@ -141,3 +141,147 @@ TYPES_TO_GENERATORS = {
     'shipping_method': shipping_method,
     'customer_id': customer_id_from_pool,   # dynamic from csv
 }
+
+
+
+from faker import Faker
+import random
+import string
+
+fake = Faker()
+customer_ids_pool = []
+
+def set_customer_ids_pool(ids: list):
+    global customer_ids_pool
+    customer_ids_pool = ids
+
+def random_customer_id():
+    return random.choice(customer_ids_pool) if customer_ids_pool else None
+
+def order_id():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
+
+def sales_channel():
+    return random.choice(['Online', 'Retail'])
+
+def currency():
+    return random.choice(['USD', 'EUR'])
+
+def payment_method():
+    return random.choice(['Credit Card', 'Debit Card', 'PayPal', 'Wire Transfer', 'Cash on Delivery'])
+
+def shipping_method():
+    return random.choice(['Standard', 'Express', 'Overnight', 'Pickup'])
+
+def order_status():
+    return random.choice(['Processing', 'Shipped', 'Delivered', 'Cancelled', 'Returned'])
+
+def order_priority():
+    return random.choice(['Low', 'Medium', 'High', 'Critical'])
+
+def referral_source():
+    return random.choice([
+        'Direct', 'Social Media', 'Email Campaign',
+        'Paid Ads', 'Affiliate', 'Organic Search', 'Referral'
+    ])
+
+def device_type():
+    return random.choice([
+        'Desktop', 'Laptop', 'Tablet', 'Smartphone', 'Smart TV'
+    ])
+
+def browser():
+    return random.choice([
+        'Chrome', 'Firefox', 'Safari', 'Edge', 'Opera', 'Brave'
+    ])
+
+def number():
+    return random.randint(1, 1000)
+
+def float_number():
+    return round(random.uniform(10.0, 1000.0), 2)
+
+def discount_code():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+def product_id():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
+def product_name():
+    return fake.catch_phrase()
+
+def quantity():
+    return random.randint(1, 20)
+
+def unit_price():
+    return round(random.uniform(5.0, 500.0), 2)
+
+def total_price():
+    # just a placeholder — you could calculate unit_price * quantity
+    return round(random.uniform(20.0, 5000.0), 2)
+
+def country():
+    return fake.country()
+
+def city():
+    return fake.city()
+
+def address():
+    return fake.address()
+
+def postal_code():
+    return fake.postcode()
+
+def phone():
+    return fake.phone_number()
+
+def email():
+    return fake.email()
+
+def order_date():
+    return fake.date_this_decade()
+
+def shipment_date():
+    return fake.date_this_decade()
+
+def delivery_date():
+    return fake.date_this_decade()
+
+def return_date():
+    return fake.date_this_decade()
+
+def tracking_number():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+
+TYPES_TO_GENERATORS = {
+    'customer_id': random_customer_id,
+    'order_id': order_id,
+    'sales_channel': sales_channel,
+    'currency': currency,
+    'payment_method': payment_method,
+    'shipping_method': shipping_method,
+    'order_status': order_status,
+    'order_priority': order_priority,
+    'referral_source': referral_source,
+    'device_type': device_type,
+    'browser': browser,
+    'product_id': product_id,
+    'product_name': product_name,
+    'quantity': quantity,
+    'unit_price': unit_price,
+    'total_price': total_price,
+    'country': country,
+    'city': city,
+    'address': address,
+    'postal_code': postal_code,
+    'phone': phone,
+    'email': email,
+    'order_date': order_date,
+    'shipment_date': shipment_date,
+    'delivery_date': delivery_date,
+    'return_date': return_date,
+    'tracking_number': tracking_number,
+    'number': number,
+    'float_number': float_number,
+    'discount_code': discount_code,
+}
