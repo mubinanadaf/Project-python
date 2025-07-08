@@ -1,0 +1,63 @@
+import csv
+from pathlib import Path
+from generators import TYPES_TO_GENERATORS, set_customer_ids_pool
+from schemas import CUSTOMERS_SCHEMA, ORDERS_SCHEMA
+
+SCHEMA_TO_DICT = {
+    'customers': CUSTOMERS_SCHEMA,
+    'orders': ORDERS_SCHEMA
+}
+
+def load_customer_ids(customers_csv_path):
+    ids = []
+    with open(customers_csv_path, newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            ids.append(row['customer_id'])
+    return ids
+
+def generate_file(schema='customers', name="customers", count=100, customers_csv_path=None):
+    p = Path(__file__).parent / "../files_test/{}".format(schema)
+    p.mkdir(parents=True, exist_ok=True)
+
+    file_name = "{}.csv".format(name)
+    file_path = p / file_name
+
+    if schema == 'orders' and customers_csv_path:
+        customer_ids = load_customer_ids(customers_csv_path)
+        set_customer_ids_pool(customer_ids)
+
+    if not file_path.exists():
+        schema_dict = SCHEMA_TO_DICT[schema]
+
+        with open(file_path, 'w', newline='') as file:
+            writer = csv.writer(file)
+            headers = [elem['name'] for elem in schema_dict]
+            headers.insert(0, "index")
+            writer.writerow(headers)
+
+            data_generators = [TYPES_TO_GENERATORS[elem['type']] for elem in schema_dict]
+
+            rows = []
+            for index in range(1, count + 1):
+                row = [gen() for gen in data_generators]
+                row.insert(0, index)
+                rows.append(row)
+
+                if index % 100000 == 0:
+                    writer.writerows(rows)
+                    rows = []
+
+                if index % 1000000 == 0:
+                    print("{}/{}".format(index, count))
+
+            writer.writerows(rows)
+            print(f"{file_path} generated.")
+
+    else:
+        print(f"{file_path} already exists.")
+
+if __name__ == '__main__':
+    # Change these values as needed
+    generate_file('customers', 'customers_5m', 5000000)
+    generate_file('orders', 'orders_5m', 5000000, customers_csv_path='../files_test/customers/customers_5m.csv')
