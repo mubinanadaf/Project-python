@@ -1,52 +1,74 @@
-CUSTOMERS_SCHEMA = [
-    {"name": "customer_id", "type": "id"},
-    {"name": "first_name", "type": "first_name"},
-    {"name": "last_name", "type": "last_name"},
-    {"name": "full_name", "type": "full_name"},
-    {"name": "email", "type": "business_email"},
-    {"name": "phone1", "type": "phone"},
-    {"name": "phone2", "type": "phone"},
-    {"name": "gender", "type": "sex"},
-    {"name": "date_of_birth", "type": "date_of_birth"},
-    {"name": "subscription_date", "type": "date_this_decade"},
-    {"name": "country", "type": "country"},
-    {"name": "city", "type": "city"},
-    {"name": "address", "type": "address"},
-    {"name": "company", "type": "company"},
-    {"name": "job_title", "type": "job"},
-    {"name": "department", "type": "business_department"},
-    {"name": "industry", "type": "industry"},
-    {"name": "website", "type": "website"},
-    {"name": "acct_number", "type": "id_number"},
-    {"name": "eid_number", "type": "eid_number"},
-    {"name": "password", "type": "password"},
-    {"name": "last_login", "type": "datetime"},
-    {"name": "account_created", "type": "date"},
-    {"name": "year_joined", "type": "year"},
-    {"name": "loyalty_points", "type": "positive_integer"},
-    {"name": "referral_code", "type": "id"},
-    {"name": "preferred_language", "type": "country"},
-    {"name": "alternate_email", "type": "email"},
-    {"name": "membership_tier", "type": "positive_integer"},
-    {"name": "is_premium", "type": "positive_integer"},
-    {"name": "support_tickets", "type": "small_positive_integer"},
-    {"name": "last_ticket_date", "type": "date"},
-    {"name": "marketing_opt_in", "type": "positive_integer"},
-    {"name": "monthly_spend", "type": "positive_integer"},
-    {"name": "lifetime_value", "type": "positive_integer"},
-    {"name": "churn_risk", "type": "positive_integer"},
-    {"name": "net_promoter_score", "type": "number"},
-    {"name": "region", "type": "country"},
-    {"name": "segment", "type": "industry"},
-    {"name": "timezone", "type": "country"},
-    {"name": "linkedin_profile", "type": "website"},
-    {"name": "twitter_handle", "type": "website"},
-    {"name": "facebook_profile", "type": "website"},
-    {"name": "ip_address", "type": "address"},
-    {"name": "device_type", "type": "long_text"},
-    {"name": "last_purchase_date", "type": "date"},
-    {"name": "total_orders", "type": "small_positive_integer"},
-    {"name": "avg_order_value", "type": "positive_integer"},
-    {"name": "recent_feedback", "type": "long_text"},
-    {"name": "preferred_contact_method", "type": "long_text"},
-]
+from datetime import datetime
+import sys
+from app.audits.audits import create_audits
+from app.extractors.data_extractor import get_sql_connection, fetch_large_data
+from app.convertors.schema_generator import generate_avro_schema
+from app.convertors.convert_to_avro import convert_to_avro
+
+def process_data_pipeline(config, query_name):
+    gcs_token = get_gcs_token()
+    output_path = config["paths"]["output_path"]
+
+    # Stage 1️⃣ SQL Connection & Data Extraction
+    unix_start_time = int(datetime.now().timestamp())
+    extracted_file = None
+    try:
+        conn = get_sql_connection(config)
+        Logger.info("SQL connection established successfully")
+
+        extracted_file, columns = fetch_large_data(conn, config, query_name)
+        if extracted_file == "error" or not columns:
+            raise Exception("Data extraction failed")
+
+        unix_end_time = int(datetime.now().timestamp())
+        create_audits(
+            output_path, gcs_token,
+            [extracted_file],
+            unix_start_time, unix_end_time
+        )
+        Logger.info("SQL extraction audit logged.")
+    except Exception as e:
+        unix_end_time = int(datetime.now().timestamp())
+        create_audits(
+            output_path, gcs_token,
+            [extracted_file if extracted_file else "sql_extraction"],
+            unix_start_time, unix_end_time
+        )
+        Logger.error(f"SQL extraction failed: {e}")
+        sys.exit(1)
+
+    # Stage 2️⃣ AVRO Schema Generation
+    unix_start_time = int(datetime.now().timestamp())
+    try:
+        generate_avro_schema(config, query_name, columns)
+        unix_end_time = int(datetime.now().timestamp())
+
+        create_audits(
+            output_path, gcs_token,
+            ["schema.avsc"],
+            unix_start_time, unix_end_time
+        )
+        Logger.info("Schema generation audit logged.")
+    except Exception as e:
+        unix_end_time = int(datetime.now().timestamp())
+        create_audits(
+            output_path, gcs_token,
+            ["schema.avsc"],
+            unix_start_time, unix_end_time
+        )
+        Logger.error(f"Schema generation failed: {e}")
+        sys.exit(1)
+
+    # Stage 3️⃣ Avro Conversion (avro, ctl, toc)
+    unix_start_time = int(datetime.now().timestamp())
+    try:
+        generated_files, unix_end_time = convert_to_avro(config)
+        create_audits(output_path, gcs_token, generated_files, unix_start_time, unix_end_time)
+        Logger.info("Avro conversion audit logged.")
+    except Exception as e:
+        unix_end_time = int(datetime.now().timestamp())
+        create_audits(output_path, gcs_token, [], unix_start_time, unix_end_time)
+        Logger.error(f"Avro conversion failed: {e}")
+        sys.exit(1)
+
+    Logger.info("All stages completed successfully.")
