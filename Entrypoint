@@ -1,0 +1,89 @@
+import os
+import json
+import logging
+import uuid
+from app.auth.auth_utils import pub_sub_url, publish_audit_logs
+
+Logger = logging.getLogger(__name__)
+
+def create_audit_payload(
+    file_name, base_name, action, status, unix_start_time,
+    unix_end_time, file_size, file_type, exception=None
+):
+    trx_id = str(uuid.uuid4())
+    return {
+        "uuid": str(uuid.uuid4()),
+        "app_id": "odin_dev",
+        "trx_id": trx_id,
+        "component": "Data Processing",
+        "object_name": base_name,
+        "action": action,
+        "pipeline_type": "data ingestion",
+        "status": status,
+        "message": f"{file_name} processed successfully" if status.lower() == "success" else f"{file_name} failed",
+        "exception": exception if exception else "",
+        "start_time": unix_start_time,
+        "end_time": unix_end_time,
+        "time_taken_in_sec": round(unix_end_time - unix_start_time, 2),
+        "object_size_kb": {"double": round(int(file_size) / 1024, 2)},
+        "object_type": file_type
+    }
+
+def create_audits(directory, gcs_token, generated_files, unix_start_time, unix_end_time):
+    try:
+        valid_extensions = [".avro", ".ctl", ".toc"]
+        valid_stage_names = [
+            "SQL_CONNECTION", "DATA_EXTRACTION",
+            "SCHEMA_GENERATION", "AVRO_CONVERSION"
+        ]
+
+        for file_name in generated_files:
+            file_path = os.path.join(directory, file_name)
+            file_extension = os.path.splitext(file_name)[1].lower()
+
+            if file_extension not in valid_extensions and file_name not in valid_stage_names:
+                Logger.info(f"Skipping unsupported file or stage: {file_name}")
+                continue
+
+            action = "PROCESS FILE"
+            exception_message = ""
+            status = "SUCCESS"
+
+            try:
+                if file_name in valid_stage_names:
+                    base_name = file_name
+                    file_size = 0
+                    file_type = "stage"
+                else:
+                    base_name = os.path.basename(file_path)
+                    file_size = os.path.getsize(file_path)
+                    file_type = file_extension.replace(".", "")
+
+                audit_payload_dict = create_audit_payload(
+                    file_name, base_name, action, status,
+                    unix_start_time, unix_end_time,
+                    file_size, file_type, exception_message
+                )
+
+                Logger.info(f"Publishing payload to Pub/Sub: {json.dumps(audit_payload_dict, indent=2)}")
+
+                audit_payload = json.dumps(audit_payload_dict)
+                publish_audit_logs(pub_sub_url, audit_payload, gcs_token)
+
+                Logger.info(f"Successfully processed audit for: {file_name}")
+
+            except Exception as e:
+                status = "FAILURE"
+                exception_message = str(e)
+                audit_payload_dict = create_audit_payload(
+                    file_name, base_name, action, status,
+                    unix_start_time, unix_end_time,
+                    file_size, file_type, exception_message
+                )
+                audit_payload = json.dumps(audit_payload_dict)
+                publish_audit_logs(pub_sub_url, audit_payload, gcs_token)
+                Logger.error(f"Failed to process audit for {file_name}: {e}")
+
+    except Exception as e:
+        Logger.error(f"An error occurred while creating audits: {e}")
+        raise
