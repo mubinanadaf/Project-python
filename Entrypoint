@@ -169,3 +169,33 @@ def process_data_pipeline(config, query_name):
         sys.exit(1)
 
     Logger.info("All stages completed successfully.")
+
+
+
+...
+
+
+valid_stages = [
+    "SQL_CONNECTION",
+    "DATA_EXTRACTION",
+    "SCHEMA_GENERATION",
+    "AVRO_CONVERSION"
+]
+
+for item in generated_items:
+    ...
+    if item in valid_stages:
+        base_name = item
+        file_type = "stage"
+        action = (
+            "CONNECT TO SQL" if item == "SQL_CONNECTION"
+            else "EXTRACT DATA" if item == "DATA_EXTRACTION"
+            else "GENERATE SCHEMA" if item == "SCHEMA_GENERATION"
+            else "CONVERT TO AVRO" if item == "AVRO_CONVERSION"
+            else "PROCESS FILE"
+        )
+    else:
+        base_name = os.path.basename(file_path)
+        file_size = os.path.getsize(file_path)
+        file_type = file_extension.replace(".", "")
+        action = "PROCESS FILE"
