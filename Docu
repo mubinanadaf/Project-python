@@ -1,0 +1,76 @@
+🔷 Execution Steps
+
+This section describes the step-by-step execution of the Synthetic Data Generator to generate, convert, and deliver synthetic test data.
+
+
+---
+
+📄 1️⃣ Synthetic Data Generation (Launchpad Server)
+
+Synthetic customer and order data are generated on the launchpad server.
+The data is generated in CSV format, saved to the specified path.
+
+Supports configurable number of records (tested up to 100 million records).
+
+customers and orders datasets are generated with realistic data using faker.
+
+If generating orders, ensure a customer_ids.csv file exists and is used as input for customer_id assignment.
+
+
+Command to execute:
+
+python main.py
+
+Output:
+
+Customer CSV file: files_test/customers/customers_<timestamp>.csv
+
+Orders CSV file: files_test/orders/orders_<timestamp>.csv
+
+
+
+---
+
+📄 2️⃣ CSV → Avro & Metadata (.ctl and .toc) Conversion (Launchpad Server)
+
+Once the CSV files are created, they are converted into Avro format along with corresponding metadata files (.ctl and .toc).
+This is done using a PySpark-based job that:
+
+Reads the generated CSV.
+
+Applies a predefined custom schema.
+
+Produces .avro, .ctl, and .toc files into the configured output directory.
+
+
+Command to execute:
+
+python dataset_conversion_csv_to_avro_pass.py \
+  -s <path_to_csv_file> \
+  -d <output_directory> \
+  -n <table_name> \
+  -f <project_name>
+
+Example:
+
+python dataset_conversion_csv_to_avro_pass.py \
+  -s ./files_test/orders/orders_100_rto.csv \
+  -d ./avro_files/ \
+  -n lfcr_demo \
+  -f odin
+
+Output:
+
+Avro file: avro_files/<table_name>.avro
+
+Metadata files: avro_files/<table_name>.ctl, avro_files/<table_name>.toc
+
+
+
+---
+
+📄 3️⃣ Delivery & Downstream Processing
+
+The .avro, .ctl, and .toc files can be uploaded to the CDMP platform or directly into GCS.
+
+BigQuery ingestion and table partitioning can be triggered via Cloud Composer DAG (outside the scope of this document).
