@@ -1,0 +1,123 @@
+from datetime import datetime, timezone
+import os
+import json
+import logging
+
+from app.audits.audits import create_audits
+from app.exceptions.exception_handler import AvroSchemaGenerationError
+from app.exceptions.exceptions import log_and_publish_exception, exception_context
+
+logger = logging.getLogger(__name__)
+
+def generate_avro_schema(config, query_name, columns, gcs_token):
+    """
+    Generates an AVRO schema based on column metadata and saves it to a file.
+    Adds audit logs for each logical step.
+    """
+    unix_start_time = int(datetime.now(timezone.utc).timestamp())
+    output_filename = None
+
+    try:
+        # Step 1: Build schema fields
+        fields = []
+        for col_name in columns:
+            avro_type = "string"  # or use normalize_sql_type() if implemented
+            fields.append({
+                "name": col_name,
+                "type": ["null", avro_type],
+                "default": None
+            })
+        logger.info("Schema fields created.")
+
+        # Audit: schema fields created
+        unix_end_time = int(datetime.now(timezone.utc).timestamp())
+        create_audits(
+            config["paths"]["schema_path"],
+            gcs_token,
+            [],
+            unix_start_time,
+            unix_end_time,
+            stage="schema_generation",
+            action="schema_generation",
+            base_name=query_name,
+            file_type="fields"
+        )
+
+        # Step 2: Build schema dict
+        schema = {
+            "type": "record",
+            "name": query_name,
+            "fields": fields
+        }
+        logger.info("Schema dictionary constructed.")
+
+        unix_start_time = unix_end_time
+        unix_end_time = int(datetime.now(timezone.utc).timestamp())
+        create_audits(
+            config["paths"]["schema_path"],
+            gcs_token,
+            [],
+            unix_start_time,
+            unix_end_time,
+            stage="schema_generation",
+            action="schema_generation",
+            base_name=query_name,
+            file_type="dict"
+        )
+
+        # Step 3: Prepare output directory
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        relative_path = config["paths"]["schema_path"]
+        output_dir = os.path.abspath(os.path.join(project_root, relative_path))
+        os.makedirs(output_dir, exist_ok=True)
+        logger.info(f"Output directory ready at {output_dir}.")
+
+        unix_start_time = unix_end_time
+        unix_end_time = int(datetime.now(timezone.utc).timestamp())
+        create_audits(
+            config["paths"]["schema_path"],
+            gcs_token,
+            [],
+            unix_start_time,
+            unix_end_time,
+            stage="schema_generation",
+            action="schema_generation",
+            base_name=query_name,
+            file_type="directory"
+        )
+
+        # Step 4: Write schema to file
+        output_filename = f"schema_{query_name}.avsc"
+        full_path = os.path.join(output_dir, output_filename)
+        with open(full_path, "w", encoding="utf-8") as f:
+            json.dump(schema, f, indent=2)
+
+        logger.info(f"Schema file written at: {full_path}.")
+
+        unix_start_time = unix_end_time
+        unix_end_time = int(datetime.now(timezone.utc).timestamp())
+        create_audits(
+            config["paths"]["schema_path"],
+            gcs_token,
+            [output_filename],
+            unix_start_time,
+            unix_end_time,
+            stage="schema_generation",
+            action="schema_generation",
+            base_name=query_name,
+            file_type="avsc"
+        )
+
+    except Exception as e:
+        logger.error(f"Error during AVRO schema creation: {e}")
+        with exception_context(
+            object_name="AVRO Schema Generation",
+            function_name="generate_avro_schema",
+            file_name=output_filename
+        ) as ctx:
+            log_and_publish_exception(
+                AvroSchemaGenerationError(f"Error while generating AVRO schema: {e}"),
+                gcs_token,
+                context=ctx
+            )
+        raise
