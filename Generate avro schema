@@ -121,3 +121,107 @@ def generate_avro_schema(config, query_name, columns, gcs_token):
                 context=ctx
             )
         raise
+
+.....
+.
+convert to avro
+
+from datetime import datetime, timezone
+import os
+import logging
+import shutil
+import fastavro
+
+from app.audits.audits import create_audits
+from app.exceptions.exception_handler import AVROFileWriteError
+from app.exceptions.exceptions import exception_context, log_and_publish_exception
+
+logger = logging.getLogger(__name__)
+
+def convert_to_avro(config, gcs_token):
+    """
+    Convert input files to AVRO format and generate CTL/TOC files.
+    Adds audit logs at each step.
+    """
+    unix_start_time = int(datetime.now(timezone.utc).timestamp())
+    generated_files = []
+
+    try:
+        input_path = config["paths"]["input_path"]
+        output_path = config["paths"]["output_path"]
+        sor = config["metadata"]["sor"]
+        chunk_size = float(eval(config["metadata"]["chunk_size"]))
+        logger.info(f"Starting AVRO conversion on input folder: {input_path}")
+
+        pattern = datetime.now().strftime("%Y%m%dT%H%M%SZ")
+        business_dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        file = next((f.name for f in os.scandir(input_path) if f.is_file()), None)
+        if not file:
+            raise FileNotFoundError(f"No files found in input path: {input_path}")
+
+        file_path = os.path.join(input_path, file)
+        extension = os.path.splitext(file)[1].lower()
+        filename_only = os.path.splitext(file)[0]
+
+        # Audit: input file found
+        unix_end_time = int(datetime.now(timezone.utc).timestamp())
+        create_audits(output_path, gcs_token, [file], unix_start_time, unix_end_time,
+                      stage="avro_conversion", action="avro_conversion", base_name=filename_only, file_type="input")
+
+        hash_key = "dummyhash"  # replace with real hash if needed
+        folder_name = f"{hash_key}_{sor}_{filename_only}_{pattern}"
+
+        dest = os.path.join(output_path, f"{folder_name}.avro")
+
+        # Copy or convert
+        if extension == ".avro":
+            shutil.copy(file_path, dest)
+        else:
+            data = process_input_file(file_path, extension)
+            schema = infer_avro_schema(data)
+            with open(dest, "wb") as out:
+                fastavro.writer(out, schema, data)
+
+        logger.info(f"Initial AVRO file written to: {dest}")
+
+        unix_start_time = unix_end_time
+        unix_end_time = int(datetime.now(timezone.utc).timestamp())
+        create_audits(output_path, gcs_token, [os.path.basename(dest)], unix_start_time, unix_end_time,
+                      stage="avro_conversion", action="avro_conversion", base_name=filename_only, file_type="avro")
+
+        # Check file size and chunk if needed
+        file_size = os.path.getsize(dest)
+        if file_size > chunk_size:
+            data = process_input_file(dest, ".avro")
+            schema = infer_avro_schema(data)
+            final_files = chunk_avro_file(data, schema, folder_name, file_size, chunk_size, output_path)
+        else:
+            final_files = [os.path.basename(dest)]
+
+        for avro_file in final_files:
+            full_path = os.path.join(output_path, avro_file)
+            unix_start_time = unix_end_time
+            unix_end_time = int(datetime.now(timezone.utc).timestamp())
+            create_audits(output_path, gcs_token, [avro_file], unix_start_time, unix_end_time,
+                          stage="avro_conversion", action="avro_conversion", base_name=filename_only, file_type="chunk")
+
+        # Generate CTL & TOC files
+        generated_files = final_files + generate_ctl_and_toc_files(
+            final_files, [], filename_only, output_path, folder_name, business_dt
+        )
+
+        unix_start_time = unix_end_time
+        unix_end_time = int(datetime.now(timezone.utc).timestamp())
+        create_audits(output_path, gcs_token, generated_files, unix_start_time, unix_end_time,
+                      stage="avro_conversion", action="avro_conversion", base_name=filename_only, file_type="ctl_toc")
+
+        logger.info(f"[SUCCESS] Converted {file} to AVRO and saved in: {output_path}")
+        return generated_files, unix_end_time
+
+    except Exception as e:
+        logger.error(f"Conversion failed: {e}", exc_info=True)
+        with exception_context(object_name="AVRO Conversion", function_name="convert_to_avro", file_name=file) as ctx:
+            log_and_publish_exception(AVROFileWriteError(f"Error during AVRO conversion: {e}"), gcs_token, context=ctx)
+        raise
+
