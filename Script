@@ -55,3 +55,62 @@ PARTITION BY _PARTITIONTIME
 OPTIONS(
   description="Customer dataset partitioned by ingestion time"
 );
+
+….........
+
+CREATE TABLE `your_project.your_dataset.orders`
+(
+  `index` INT64,
+  `order_id` STRING,
+  `customer_id` STRING,
+  `order_date` DATE,
+  `shipping_date` DATE,
+  `delivery_date` DATE,
+  `order_status` STRING,
+  `payment_method` STRING,
+  `currency` STRING,
+  `total_amount` INT64,
+  `discount` INT64,
+  `tax` INT64,
+  `shipping_cost` INT64,
+  `product_id` STRING,
+  `product_name` STRING,
+  `product_category` STRING,
+  `product_subcategory` STRING,
+  `quantity` INT64,
+  `unit_price` INT64,
+  `vendor_id` STRING,
+  `vendor_name` STRING,
+  `warehouse_id` STRING,
+  `warehouse_location` STRING,
+  `region` STRING,
+  `sales_channel` STRING,
+  `order_priority` STRING,
+  `referral_source` STRING,
+  `device_type` STRING,
+  `browser` STRING,
+  `ip_address` STRING,
+  `shipping_address` STRING,
+  `billing_address` STRING,
+  `customer_feedback` STRING,
+  `customer_rating` INT64,
+  `return_requested` BOOL,
+  `return_reason` STRING,
+  `refund_amount` INT64,
+  `loyalty_points_used` INT64,
+  `gift_wrap` BOOL,
+  `special_instructions` STRING,
+  `promotion_code` STRING,
+  `shipment_tracking_number` STRING,
+  `shipment_carrier` STRING,
+  `expected_delivery_date` DATE,
+  `actual_delivery_date` DATE,
+  `order_review_date` DATE,
+  `customer_service_interaction` STRING,
+  `order_revision` INT64,
+  `is_fraudulent` BOOL
+)
+PARTITION BY DATE(order_date)
+OPTIONS (
+  description = "Synthetic orders table with partitioning on order_date"
+);
