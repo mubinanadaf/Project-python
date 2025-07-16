@@ -74,3 +74,118 @@ Metadata files: avro_files/<table_name>.ctl, avro_files/<table_name>.toc
 The .avro, .ctl, and .toc files can be uploaded to the CDMP platform or directly into GCS.
 
 BigQuery ingestion and table partitioning can be triggered via Cloud Composer DAG (outside the scope of this document).
+
+
+...........
+
+Overview
+
+This document describes the technical steps to generate synthetic test data for customers or orders, convert it to Avro + metadata files, and load it into BigQuery. It also explains how to customize schemas or parameters for future use.
+
+
+---
+
+🖥️ Components
+
+Component	Location	Purpose
+
+main.py	csv_generator_bq_load/	Generates CSV data for specified schema
+dataset_conversion_csv_to_avro_pass.py	project root	Converts CSV → Avro + CTL/TOC
+schemas/	csv_generator_bq_load/schemas/	Defines the columns and types for each dataset
+generators.py	csv_generator_bq_load/	Defines data generation logic
+files_test/	project root	Directory where generated CSV files are stored
+avro_files/	project root	Directory where Avro & metadata files are stored
+
+
+
+---
+
+🚀 Execution Steps
+
+✅ Prerequisites
+
+Python ≥ 3.7 installed.
+
+Virtual environment activated.
+
+Required Python packages installed:
+
+
+pip install -r requirements.txt
+
+Google Cloud credentials (if uploading to GCS/BigQuery).
+
+
+
+---
+
+1️⃣ Generate Synthetic CSV
+
+Run the main.py script to generate CSV files for customers or orders.
+
+cd csv_generator_bq_load
+python main.py
+
+By default:
+
+customers_100.csv with 100 records → saved in ../files_test/customers/
+
+orders_100.csv with 100 records → saved in ../files_test/orders/
+
+
+You can adjust the record count and output name in main.py:
+
+generate_file('customers', 'customers_1000', 1000)
+generate_file('orders', 'orders_1000', 1000)
+
+
+---
+
+2️⃣ Convert CSV to Avro + Metadata
+
+Run dataset_conversion_csv_to_avro_pass.py:
+
+python dataset_conversion_csv_to_avro_pass.py \
+    -s ../files_test/customers/customers_100.csv \
+    -d avro_files/ \
+    -n lfcr_demo \
+    -f odin
+
+This generates:
+
+Avro file
+
+.ctl and .toc metadata files
+
+Output stored in avro_files/
+
+
+Replace -s with the path to your CSV file.
+
+
+---
+
+3️⃣ Load into BigQuery
+
+You can use the provided Airflow DAG (load_to_bq_dag.py) to load the Avro file into BigQuery, or run a manual bq command.
+
+✅ BigQuery table uses ingestion-time partitioning — no snapshot date is required in the data.
+
+Sample query to check data:
+
+SELECT * FROM `project.dataset.orders`
+WHERE _PARTITIONTIME = CURRENT_DATE()
+
+
+---
+
+🧩 Customization
+
+What to Change	How
+
+Record count	Edit count parameter in main.py
+Schema columns	Edit CUSTOMERS_SCHEMA or ORDERS_SCHEMA in schemas/
+Add generator	Add function & mapping in generators.py
+Output folder	Change path in generate_file() call
+
+
