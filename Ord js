@@ -240,3 +240,23 @@
         "mode": "NULLABLE"
     }
 ]
+.....
+{
+  "config": {
+    "corp_sec_to_rto_bq2bq.toc": {
+      "config_data": {
+        "target_dataset": "rto",
+        "target_name": "t_badge_events_bq_bq",
+        "sfr_outbound_dataset": "corp_sec",
+        "source_name": "t_badge_events",
+        "app_id": "corp_sec",
+        "project_id": "your-project-id",
+        "archive_object": "archive/corp_sec_to_rto_bq2bq",
+        "write_mode": "append",
+        "data_load_pre_check": true,
+        "data_load_post_check": true
+      },
+      "config_key": "corp_sec_to_rto_bq2bq"
+    }
+  }
+}
