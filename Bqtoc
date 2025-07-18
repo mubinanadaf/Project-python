@@ -1,0 +1,13 @@
+{
+  "dataTransfered": {
+    "uuid": "dummy-uuid-for-bq2bq",
+    "businessProcessingDateTime": "20250715T045359Z",
+    "fileNameConfiguredInCDMP": "t_badge_events",
+    "fileType": "avro",
+    "datafile": [
+      {
+        "name": "t_badge_events"
+      }
+    ]
+  }
+}
