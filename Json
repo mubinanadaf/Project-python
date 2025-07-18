@@ -27,3 +27,12 @@
     }
   }
 }
+
+......
+CREATE TABLE `my-project.staging_corp_sec.corp_sec_badge_events_staging`
+AS SELECT * FROM `my-project.corp_sec.t_badge_events`
+WHERE FALSE;
+...
+
+"sfr_outbound_dataset": "staging_corp_sec",
+"source_name": "corp_sec"
