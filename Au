@@ -80,3 +80,77 @@ def create_audits(directory, gcs_token, message, unix_start_time, unix_end_time,
     except Exception as e:
         logging.error(f"An error occurred while creating audits: {e}")
         raise
+
+....
+def create_audits(directory, gcs_token, message, unix_start_time, unix_end_time, files=None):
+    try:
+        valid_extensions = [".avro", ".ctl", ".toc"]
+
+        if not files:
+            # Stage-level audit (no files given or empty)
+            audit_payload_dict = create_audit_payload(
+                object_name=message,
+                base_name=message,
+                action=message,
+                status="SUCCESS",
+                unix_start_time=unix_start_time,
+                unix_end_time=unix_end_time,
+                file_size=None,
+                file_type=None,
+                exception_message=""
+            )
+
+            logging.debug("Publishing stage payload to Pub/Sub:\n%s", json.dumps(audit_payload_dict, indent=2))
+            audit_payload = json.dumps(audit_payload_dict)
+            publish_audit_logs(pub_sub_url, audit_payload, gcs_token)
+            logging.info(f"Successfully processed stage: {message}")
+            return
+
+        # File-level audits
+        for file_item in files:
+            status = "SUCCESS"
+            exception_message = ""
+            file_size = None
+            file_type = None
+
+            # Defensive: if file_item is tuple, take first element
+            if isinstance(file_item, tuple):
+                file_name = file_item[0]
+            else:
+                file_name = file_item
+
+            base_name = os.path.basename(file_name)
+            file_path = os.path.join(directory, file_name)
+            file_extension = os.path.splitext(file_name)[1].lower()
+
+            if file_extension not in valid_extensions:
+                logging.info(f"Skipping unsupported file: {file_name}")
+                continue
+
+            try:
+                file_size = os.path.getsize(file_path)
+                file_type = file_extension.replace(".", "")
+            except Exception as e:
+                status = "FAILURE"
+                exception_message = str(e)
+
+            audit_payload_dict = create_audit_payload(
+                object_name=message,
+                base_name=base_name,
+                action=message,
+                status=status,
+                unix_start_time=unix_start_time,
+                unix_end_time=unix_end_time,
+                file_size=file_size,
+                file_type=file_type,
+                exception_message=exception_message
+            )
+
+            logging.debug("Publishing file payload to Pub/Sub:\n%s", json.dumps(audit_payload_dict, indent=2))
+            audit_payload = json.dumps(audit_payload_dict)
+            publish_audit_logs(pub_sub_url, audit_payload, gcs_token)
+            logging.info(f"Successfully processed file: {file_name}")
+
+    except Exception as e:
+        logging.error(f"An error occurred while creating audits: {e}")
+        raise
