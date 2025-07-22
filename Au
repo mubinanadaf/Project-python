@@ -1,13 +1,29 @@
+import os
+import json
+import logging
+from app.pubsub.publish_audit_logs import publish_audit_logs
+from app.audit_payload import create_audit_payload
+
 def create_audits(directory, gcs_token, message, unix_start_time, unix_end_time, files=None):
     try:
         valid_extensions = [".avro", ".ctl", ".toc"]
 
+        # Safely extract stage/action name
+        stage_name = "UNKNOWN_STAGE"
+        if message:
+            message = str(message)
+            if ":" in message:
+                stage_name, _ = message.split(":", 1)
+                stage_name = stage_name.strip()
+            else:
+                stage_name = message.strip()
+
         if not files:
             # Stage-level audit (no files)
             audit_payload_dict = create_audit_payload(
-                object_name=message,
-                base_name=message,
-                action=message,
+                object_name=stage_name,
+                base_name=stage_name,
+                action=stage_name,
                 status="SUCCESS",
                 unix_start_time=unix_start_time,
                 unix_end_time=unix_end_time,
@@ -19,7 +35,7 @@ def create_audits(directory, gcs_token, message, unix_start_time, unix_end_time,
             logging.debug("Publishing stage payload to Pub/Sub:\n%s", json.dumps(audit_payload_dict, indent=2))
             audit_payload = json.dumps(audit_payload_dict)
             publish_audit_logs(pub_sub_url, audit_payload, gcs_token)
-            logging.info(f"Successfully processed stage: {message}")
+            logging.info(f"Successfully processed stage: {stage_name}")
             return
 
         # File-level audits
@@ -45,9 +61,9 @@ def create_audits(directory, gcs_token, message, unix_start_time, unix_end_time,
                 exception_message = str(e)
 
             audit_payload_dict = create_audit_payload(
-                object_name=message,
+                object_name=stage_name,
                 base_name=base_name,
-                action=message,
+                action=stage_name,
                 status=status,
                 unix_start_time=unix_start_time,
                 unix_end_time=unix_end_time,
