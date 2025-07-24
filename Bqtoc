@@ -11,3 +11,46 @@
     ]
   }
 }
+
+...
+def list_objects_to_process(**context):
+    toc_dict = {}
+    try:
+        config_dict = context['ti'].xcom_pull(task_ids='cdp_config_file_validation')['config']
+        logging.info(config_dict)
+
+        for key, value in config_dict.items():
+            source_type = value['source_name']
+            src_bkt = value['source_object'].replace("gs://", "")
+            
+            # ✅ Skip TOC processing for BigQuery source
+            if source_type == "BigQuery":
+                logging.info(f"Skipping TOC load for BigQuery source: {key}")
+                toc_dict[key] = {
+                    'toc_data': {},
+                    'toc_files': [],
+                    'toc_list': [],
+                    'src_bkt': None
+                }
+                continue
+
+            # ✅ Continue GCS TOC processing
+            storage_client = storage.Client()
+            blobs = storage_client.list_blobs(src_bkt)
+            toc_ptrn = value['toc_file']
+
+            toc_blobs = [blob for blob in blobs if toc_ptrn in blob.name and blob.name.endswith('toc')]
+            toc_files = [blob.name for blob in toc_blobs]
+
+            logging.info(toc_files)
+
+            toc_list = [toc_ptrn]  # optionally can use list of matching files
+
+            toc_dict[key] = process_toc_list(toc_list, src_bkt, toc_ptrn, key, value, context, toc_dict)
+
+    except Exception as ex:
+        logging.error(f"An error has occurred in the process: {ex}")
+        sys.exit(1)
+
+    return toc_dict
+
