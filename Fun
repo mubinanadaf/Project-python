@@ -1,0 +1,132 @@
+def sf_validate_pre_checks(kwargs): """ Performs pre-validation checks: - Table availability in the outbound dataset - Table emptiness - Logging of control outcomes Supports both GCS-to-BQ and BQ-to-BQ pipelines. """ from datetime import datetime as dt2, timezone import sys import logging
+
+ti = kwargs['task_instance']
+dimc_pre_check_response = {
+    "DQ_TABLE_AVAILABILITY_CHECK": {"Execution": "not-performed", "Result": "not-applicable"},
+    "DQ_TABLE_EMPTY_CHECK": {"Execution": "not-performed", "Result": "not-applicable"}
+}
+pre_check_response = {
+    "uuid": "",
+    "trx_id": "",
+    "project_id": "",
+    "app_id": "",
+    "created_by": "",
+    "control_type": "pre-controls",
+    "source_type": "BigQuery",
+    "source_name": "",
+    "source_object": "",
+    "target_type": "BigQuery",
+    "target_name": "",
+    "target_object": "",
+    "library_version": 1.0,
+    "control_id": "",
+    "control_name": "",
+    "control_status": "",
+    "log_info": ""
+}
+try:
+    start_time = int(dt2.now(timezone.utc).timestamp() * 1000)
+
+    # Fetch common variables
+    bucket = ti.xcom_pull(task_ids='run_time_variables', key='source_bucket')
+    lane = ti.xcom_pull(task_ids='run_time_variables', key='lane')
+    sfr_project_id = ti.xcom_pull(task_ids='run_time_variables', key='sfr_project_id')
+    config_data = ti.xcom_pull(task_ids='run_time_variables', key='config_data')
+    staging_dataset = ti.xcom_pull(task_ids='run_time_variables', key='sfr_outbound_dataset').split('.')[1]
+    sfr_dlp_bq = ti.xcom_pull(task_ids='run_time_variables', key='sfr_dlp_bq')
+
+    # Set pre-check metadata
+    pre_check_response["uuid"] = ti.xcom_pull(task_ids='run_time_variables', key='uuid')
+    pre_check_response["trx_id"] = config_data['trx_id']
+    pre_check_response["project_id"] = config_data['project_id']
+    pre_check_response["app_id"] = config_data['app_id']
+    pre_check_response["created_by"] = config_data['app_id'] + "_composer_job"
+    pre_check_response["source_name"] = config_data['source_name']
+    pre_check_response["source_object"] = config_data['sfr_outbound_dataset']
+    pre_check_response["target_name"] = config_data['target_name']
+    pre_check_response["target_object"] = config_data['target_object']
+    pre_check_response["start_time"] = start_time
+
+    avro_files = []
+
+    if sfr_dlp_bq == 'enable':
+        toc_file = ti.xcom_pull(task_ids='run_time_variables', key='toc_file')
+        files_to_archive = toc_file.replace(".toc", "")
+        avro_files_dict = read_gcs_file(bucket, toc_file)["dataTransfered"]["dataFile"]
+        avro_files = [item["name"] for item in avro_files_dict]
+    else:
+        # In BQ to BQ case, assume tables are passed directly from previous step
+        avro_files = ti.xcom_pull(task_ids='run_time_variables', key='staging_tables')
+
+    part_tables = [file.replace('.avro', '') for file in avro_files] if sfr_dlp_bq == 'enable' else avro_files
+
+    staging_tables = []
+    empty_tables = []
+    missing_staging_tables = []
+
+    for part_table in part_tables:
+        is_table_available = sf_table_availability_check(staging_dataset, part_table)
+        if is_table_available:
+            is_table_not_empty = sf_table_emptiness_check(staging_dataset, part_table)
+            if is_table_not_empty:
+                staging_tables.append(part_table)
+            else:
+                empty_tables.append(part_table)
+        else:
+            missing_staging_tables.append(part_table)
+
+    if missing_staging_tables:
+        pre_check_response["control_id"] = "DQ_TAVC"
+        pre_check_response["control_name"] = "DQ_TABLE_AVAILABILITY_CHECK"
+        pre_check_response["control_status"] = "failed"
+        pre_check_response["log_info"] = f"tables not available {missing_staging_tables}"
+        pre_check_response["end_time"] = int(dt2.now(timezone.utc).timestamp() * 1000)
+        kwargs['ti'].xcom_push(key='missing_staging_tables', value=missing_staging_tables)
+        Logging.info(f"tables not available {missing_staging_tables}")
+        sf_publish_logs(sfr_project_id, lane, pre_check_response)
+        dimc_pre_check_response["DQ_TABLE_AVAILABILITY_CHECK"]["Execution"] = 'performed'
+        dimc_pre_check_response["DQ_TABLE_AVAILABILITY_CHECK"]["Result"] = pre_check_response["log_info"]
+        kwargs['ti'].xcom_push(key='dimc_pre_check_response', value=dimc_pre_check_response)
+        sys.exit(1)
+    else:
+        pre_check_response["control_id"] = "DQ_TAVC"
+        pre_check_response["control_name"] = "DQ_TABLE_AVAILABILITY_CHECK"
+        pre_check_response["control_status"] = "success"
+        pre_check_response["log_info"] = "all the staging tables available in the sf outbound dataset"
+        pre_check_response["end_time"] = int(dt2.now(timezone.utc).timestamp() * 1000)
+        sf_publish_logs(sfr_project_id, lane, pre_check_response)
+        dimc_pre_check_response["DQ_TABLE_AVAILABILITY_CHECK"]["Execution"] = 'performed'
+        dimc_pre_check_response["DQ_TABLE_AVAILABILITY_CHECK"]["Result"] = "success"
+
+    if empty_tables:
+        pre_check_response["control_id"] = "DQ_TEMC"
+        pre_check_response["control_name"] = "DQ_TABLE_EMPTY_CHECK"
+        pre_check_response["control_status"] = "failed"
+        pre_check_response["log_info"] = f"tables empty {empty_tables}"
+        pre_check_response["end_time"] = int(dt2.now(timezone.utc).timestamp() * 1000)
+        kwargs['ti'].xcom_push(key='empty_tables', value=empty_tables)
+        Logging.info(f"tables empty {empty_tables}")
+        sf_publish_logs(sfr_project_id, lane, pre_check_response)
+        dimc_pre_check_response["DQ_TABLE_EMPTY_CHECK"]["Execution"] = 'performed'
+        dimc_pre_check_response["DQ_TABLE_EMPTY_CHECK"]["Result"] = pre_check_response["log_info"]
+        kwargs['ti'].xcom_push(key='dimc_pre_check_response', value=dimc_pre_check_response)
+        sys.exit(1)
+    else:
+        pre_check_response["control_id"] = "DQ_TEMC"
+        pre_check_response["control_name"] = "DQ_TABLE_EMPTY_CHECK"
+        pre_check_response["control_status"] = "success"
+        pre_check_response["log_info"] = "all the staging tables having data in sf outbound dataset"
+        pre_check_response["end_time"] = int(dt2.now(timezone.utc).timestamp() * 1000)
+        sf_publish_logs(sfr_project_id, lane, pre_check_response)
+        dimc_pre_check_response["DQ_TABLE_EMPTY_CHECK"]["Execution"] = 'performed'
+        dimc_pre_check_response["DQ_TABLE_EMPTY_CHECK"]["Result"] = "success"
+        kwargs['ti'].xcom_push(key='staging_tables', value=staging_tables)
+
+    kwargs['ti'].xcom_push(key='dimc_pre_check_response', value=dimc_pre_check_response)
+except Exception as e:
+    Logging.info("Exception occurred while trying to execute sf_validate_pre_checks with exception " + str(e))
+    kwargs['ti'].xcom_push(key='dimc_pre_check_response', value=dimc_pre_check_response)
+    sys.exit(1)
+
+return dimc_pre_check_response
+
