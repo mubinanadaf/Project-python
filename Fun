@@ -160,4 +160,54 @@ def dimc_pre_check(**kwargs):
     except Exception as e:
         logging.info(f"Error while skipping pre-checks: {e}")
         sys.exit(1)
+...
+.
 
+
+
+
+def data_load_task(**kwargs):
+    """
+    Unified function to load data either from GCS to BQ or BQ to BQ based on `source_type`.
+    """
+    try:
+        ti = kwargs['task_instance']
+        source_type = ti.xcom_pull(task_ids='run_time_variables', key='source_type')
+
+        if source_type and source_type.lower() == 'bigquery':
+            logging.info("Detected source_type as BigQuery, calling data_load_bq_bq...")
+            return data_load_bq_bq(**kwargs)
+
+        # Else proceed with GCS-to-BQ logic
+        logging.info("Proceeding with GCS to BQ load.")
+        
+        data_files = ti.xcom_pull(task_ids="list_data_files", key='part_files')
+        source_bucket = ti.xcom_pull(task_ids='run_time_variables', key='source_bucket')
+        target_dataset = ti.xcom_pull(task_ids='run_time_variables', key='target_dataset')
+        target_name = ti.xcom_pull(task_ids='run_time_variables', key='target_name')
+        write_mode = ti.xcom_pull(task_ids='run_time_variables', key='write_mode')
+        data_load_pre_check = ti.xcom_pull(task_ids='run_time_variables', key='data_load_pre_check')
+        pre_check_response = ti.xcom_pull(task_ids='dimc_pre_check')
+
+        controls_failed = [key for key, value in pre_check_response.items() if value['Result'] not in ['success', 'not-applicable']]
+        if controls_failed and data_load_pre_check == 'ABORT':
+            logging.info(f"dimc pre-checks {controls_failed} have failed. Aborting the subsequent loads")
+            sys.exit(1)
+
+        data_etl_load_task = GCSToBigQueryOperator(
+            task_id='data_etl_load_task',
+            bucket=source_bucket,
+            source_objects=data_files,
+            destination_project_dataset_table=f"{target_dataset}.{target_name}",
+            schema_fields=get_schema_fields(target_dataset, target_name),
+            source_format='AVRO',
+            autodetect=False,
+            write_disposition=load_type(target_dataset, target_name, write_mode),
+            create_disposition='CREATE_NEVER',
+            src_fmt_configs={"useAvroLogicalTypes": True}
+        )
+        data_etl_load_task.execute(context=kwargs)
+
+    except Exception as e:
+        logging.info(f"An error occurred in the data_load_task: {e}")
+        sys.exit(1)
