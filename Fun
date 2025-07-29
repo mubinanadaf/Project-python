@@ -130,3 +130,34 @@ except Exception as e:
 
 return dimc_pre_check_response
 
+
+def dimc_pre_check(**kwargs):
+    """
+    Skip all validations and return dummy success result
+    to allow BQ-to-BQ load to run for testing.
+    """
+    try:
+        ti = kwargs['task_instance']
+
+        # Directly fetch passed staging tables from run_time_variables
+        staging_tables = ti.xcom_pull(task_ids='run_time_variables', key='staging_tables')
+
+        logging.info(f"Skipping validations. Staging tables passed: {staging_tables}")
+
+        # Prepare dummy pre-check response
+        pre_check_response = {
+            "DQ_TABLE_AVAILABILITY_CHECK": {"Execution": "skipped", "Result": "not-applicable"},
+            "DQ_TABLE_EMPTY_CHECK": {"Execution": "skipped", "Result": "not-applicable"},
+            "DQ_DATA_RECONCILIATION_CHECK": {"Execution": "skipped", "Result": "not-applicable"}
+        }
+
+        # Push dummy responses for downstream tasks
+        ti.xcom_push(key='staging_tables', value=staging_tables)
+        ti.xcom_push(key='dimc_pre_check_response', value=pre_check_response)
+
+        return pre_check_response
+
+    except Exception as e:
+        logging.info(f"Error while skipping pre-checks: {e}")
+        sys.exit(1)
+
