@@ -1,0 +1,78 @@
+def test_tasks_exist_and_callables(self):
+    ids = {t.task_id for t in self.dag.tasks}
+
+    # must-have tasks
+    self.assertIn("run_time_variables", ids)
+    self.assertIn("dimc_pre_check", ids)
+
+    # loader can be either name depending on your DAG
+    self.assertTrue(
+        ("data_load_task" in ids) or ("data_load_bq_bq" in ids),
+        f"Expected one of data_load_task or data_load_bq_bq; got {ids}",
+    )
+
+    # verify callables for the tasks that actually exist
+    self.assertIs(self.dag.get_task("run_time_variables").python_callable, self.mock_run_time)
+    self.assertIs(self.dag.get_task("dimc_pre_check").python_callable, self.mock_pre)
+
+    if "data_load_write_disposition" in ids:
+        self.assertIs(
+            self.dag.get_task("data_load_write_disposition").python_callable, self.mock_write
+        )
+
+    if "data_load_task" in ids:
+        self.assertIs(self.dag.get_task("data_load_task").python_callable, self.mock_load)
+    elif "data_load_bq_bq" in ids:
+        self.assertIs(self.dag.get_task("data_load_bq_bq").python_callable, self.mock_data_load_bq_bq)
+
+    if "dimc_post_check" in ids:
+        self.assertIs(self.dag.get_task("dimc_post_check").python_callable, self.mock_post)
+
+
+
+        def test_dependency_chain(self):
+    get = self.dag.get_task
+    ids = {t.task_id for t in self.dag.tasks}
+
+    run = get("run_time_variables")
+    pre = get("dimc_pre_check")
+
+    wdis = get("data_load_write_disposition") if "data_load_write_disposition" in ids else None
+    load = (
+        get("data_load_task") if "data_load_task" in ids
+        else get("data_load_bq_bq")
+    )
+    post = get("dimc_post_check") if "dimc_post_check" in ids else None
+
+    # run -> pre
+    self.assertIn("dimc_pre_check", run.downstream_task_ids)
+    self.assertIn("run_time_variables", pre.upstream_task_ids)
+
+    if wdis:  # pre -> write_disposition -> load
+        self.assertIn("data_load_write_disposition", pre.downstream_task_ids)
+        self.assertIn("dimc_pre_check", wdis.upstream_task_ids)
+
+        self.assertIn(load.task_id, wdis.downstream_task_ids)
+        self.assertIn("data_load_write_disposition", load.upstream_task_ids)
+    else:     # pre -> load (direct)
+        self.assertIn(load.task_id, pre.downstream_task_ids)
+        self.assertIn("dimc_pre_check", load.upstream_task_ids)
+
+    if post:  # load -> post (only if present)
+        self.assertIn("dimc_post_check", load.downstream_task_ids)
+        self.assertIn(load.task_id, post.upstream_task_ids)
+
+
+def test_task_callbacks(self):
+    from utils.cdp_audit_logs import log_task_level_audit as audit
+
+    for t in self.dag.tasks:
+        if t.task_id == "run_time_variables":
+            # often intentionally has no callbacks
+            continue
+        # only assert when callbacks are actually set
+        if t.on_success_callback is not None:
+            self.assertIs(t.on_success_callback, audit, f"{t.task_id} success callback")
+        if t.on_failure_callback is not None:
+            self.assertIs(t.on_failure_callback, audit, f"{t.task_id} failure callback")
+        
