@@ -212,3 +212,41 @@ class TestBqToBqDataLoadDag(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+# BEFORE you do: fake_airflow_ops_python.PythonOperator = FakePythonOperator
+# make sure the class is already defined:
+
+class FakePythonOperator:
+    def __init__(self, *, task_id, python_callable=None,
+                 on_success_callback=None, on_failure_callback=None,
+                 dag=None, **_):
+        self.task_id = task_id
+        self.python_callable = python_callable
+        self.on_success_callback = on_success_callback
+        self.on_failure_callback = on_failure_callback
+        self.upstream_task_ids, self.downstream_task_ids = set(), set()
+        if dag is not None and hasattr(dag, "add_task"):
+            dag.add_task(self)
+
+    # ✅ support a >> [b, c] and [b, c] << a (fixes dependency test failures)
+    def __rshift__(self, other):
+        items = other if isinstance(other, (list, tuple, set)) else [other]
+        for t in items:
+            self.set_downstream(t)
+        return other
+
+    def __lshift__(self, other):
+        items = other if isinstance(other, (list, tuple, set)) else [other]
+        for t in items:
+            self.set_upstream(t)
+        return other
+
+    def set_upstream(self, task):
+        self.upstream_task_ids.add(task.task_id)
+        task.downstream_task_ids.add(self.task_id)
+
+    def set_downstream(self, task):
+        self.downstream_task_ids.add(task.task_id)
+        task.upstream_task_ids.add(self.task_id)
+
+# …then:
+fake_airflow_ops_python.PythonOperator = FakePythonOperator
