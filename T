@@ -1,0 +1,183 @@
+# tests/test_odin_bq_bq_data_load_dag.py
+import datetime
+import pytest
+from airflow.models import TaskInstance, State
+from airflow.operators.python import PythonOperator
+from unittest import mock
+
+# Direct import of the DAG module
+import src.odin.dag.odin_bq_bq_data_load as dag_module
+
+
+class TestOdinBqBqDataLoadDAG:
+    @classmethod
+    def setup_class(cls):
+        cls.dag = dag_module.dag
+
+    def test_dag_loaded(self):
+        assert self.dag is not None
+
+    def test_dag_attributes(self):
+        assert self.dag.dag_id == "odin_bq_bq_data_load"
+        assert self.dag.catchup is False
+        assert self.dag.schedule_interval is None
+        assert self.dag.max_active_runs == 25
+
+    def test_default_args(self):
+        default_args = self.dag.default_args
+        assert default_args["depends_on_past"] is False
+        assert isinstance(default_args["start_date"], datetime.datetime)
+        assert default_args["retries"] == 3
+        assert default_args["retry_delay"] == datetime.timedelta(minutes=1)
+
+    def test_task_count(self):
+        assert len(self.dag.tasks) == 5
+
+    def test_task_ids(self):
+        expected = {
+            "run_time_variables",
+            "dimc_pre_check",
+            "data_load_write_disposition",
+            "data_load_task",
+            "dimc_post_check",
+        }
+        assert set(t.task_id for t in self.dag.tasks) == expected
+
+    def test_task_dependencies(self):
+        run_time_variables = self.dag.get_task("run_time_variables")
+        dimc_pre_check = self.dag.get_task("dimc_pre_check")
+        data_load_write_disposition = self.dag.get_task("data_load_write_disposition")
+        data_load_task = self.dag.get_task("data_load_task")
+        dimc_post_check = self.dag.get_task("dimc_post_check")
+
+        # Upstream checks
+        assert run_time_variables.upstream_task_ids == set()
+        assert dimc_pre_check.upstream_task_ids == {"run_time_variables"}
+        assert data_load_write_disposition.upstream_task_ids == {"dimc_pre_check"}
+        assert data_load_task.upstream_task_ids == {"data_load_write_disposition"}
+        assert dimc_post_check.upstream_task_ids == {"data_load_task"}
+
+        # Downstream checks
+        assert run_time_variables.downstream_task_ids == {"dimc_pre_check"}
+        assert dimc_pre_check.downstream_task_ids == {"data_load_write_disposition"}
+        assert data_load_write_disposition.downstream_task_ids == {"data_load_task"}
+        assert data_load_task.downstream_task_ids == {"dimc_post_check"}
+        assert dimc_post_check.downstream_task_ids == set()
+
+    def test_task_operator_types(self):
+        for task in self.dag.tasks:
+            assert isinstance(task, PythonOperator)
+
+    def test_task_callbacks(self):
+        from utils.cdp_audit_logs import log_task_level_audit
+
+        run_time_variables = self.dag.get_task("run_time_variables")
+        assert run_time_variables.on_success_callback is None
+        assert run_time_variables.on_failure_callback is None
+
+        for tid in [
+            "dimc_pre_check",
+            "data_load_write_disposition",
+            "data_load_task",
+            "dimc_post_check",
+        ]:
+            t = self.dag.get_task(tid)
+            assert t.on_success_callback == log_task_level_audit
+            assert t.on_failure_callback == log_task_level_audit
+
+    # -------- Task level execution tests with mocks ---------
+
+    @mock.patch("utils.cdp_common_functions.run_time_variables")
+    def test_run_time_variables_task(self, mock_fn):
+        task = self.dag.get_task("run_time_variables")
+        ti = TaskInstance(task=task, execution_date=datetime.datetime.now())
+        context = ti.get_template_context()
+        mock_fn.return_value = {"variable1": "value1"}
+        result = task.execute(context=context)
+        mock_fn.assert_called_once_with(**context)
+        assert result == {"variable1": "value1"}
+
+    @mock.patch("utils.cdp_common_functions.dimc_pre_check")
+    @mock.patch("utils.cdp_audit_logs.log_task_level_audit")
+    def test_dimc_pre_check_task(self, mock_audit, mock_fn):
+        task = self.dag.get_task("dimc_pre_check")
+        ti = TaskInstance(task=task, execution_date=datetime.datetime.now())
+        context = ti.get_template_context()
+        mock_fn.return_value = True
+        result = task.execute(context=context)
+        mock_fn.assert_called_once_with(**context)
+        assert result is True
+
+    @mock.patch("utils.cdp_common_functions.data_load_write_disposition")
+    @mock.patch("utils.cdp_audit_logs.log_task_level_audit")
+    def test_data_load_write_disposition_task(self, mock_audit, mock_fn):
+        task = self.dag.get_task("data_load_write_disposition")
+        ti = TaskInstance(task=task, execution_date=datetime.datetime.now())
+        context = ti.get_template_context()
+        mock_fn.return_value = "WRITE_APPEND"
+        result = task.execute(context=context)
+        mock_fn.assert_called_once_with(**context)
+        assert result == "WRITE_APPEND"
+
+    @mock.patch("utils.cdp_common_functions.data_load_task")
+    @mock.patch("utils.cdp_audit_logs.log_task_level_audit")
+    def test_data_load_task(self, mock_audit, mock_fn):
+        task = self.dag.get_task("data_load_task")
+        ti = TaskInstance(task=task, execution_date=datetime.datetime.now())
+        context = ti.get_template_context()
+        mock_fn.return_value = {"status": "success", "rows_loaded": 100}
+        result = task.execute(context=context)
+        mock_fn.assert_called_once_with(**context)
+        assert result == {"status": "success", "rows_loaded": 100}
+
+    @mock.patch("utils.cdp_common_functions.dimc_post_check")
+    @mock.patch("utils.cdp_audit_logs.log_task_level_audit")
+    def test_dimc_post_check_task(self, mock_audit, mock_fn):
+        task = self.dag.get_task("dimc_post_check")
+        ti = TaskInstance(task=task, execution_date=datetime.datetime.now())
+        context = ti.get_template_context()
+        mock_fn.return_value = True
+        result = task.execute(context=context)
+        mock_fn.assert_called_once_with(**context)
+        assert result is True
+
+    # -------- Integration test ---------
+
+    @mock.patch("utils.cdp_common_functions.run_time_variables")
+    @mock.patch("utils.cdp_common_functions.dimc_pre_check")
+    @mock.patch("utils.cdp_common_functions.data_load_write_disposition")
+    @mock.patch("utils.cdp_common_functions.data_load_task")
+    @mock.patch("utils.cdp_common_functions.dimc_post_check")
+    @mock.patch("utils.cdp_audit_logs.log_task_level_audit")
+    def test_dag_integration(self, mock_audit, mock_post, mock_load, mock_write, mock_pre, mock_runtime):
+        mock_runtime.return_value = {"variable1": "value1"}
+        mock_pre.return_value = True
+        mock_write.return_value = "WRITE_APPEND"
+        mock_load.return_value = {"status": "success", "rows_loaded": 100}
+        mock_post.return_value = True
+
+        # Run the DAG manually
+        execution_date = datetime.datetime.now()
+        dag_run = self.dag.create_dagrun(
+            run_id="test_run",
+            execution_date=execution_date,
+            state=State.RUNNING,
+        )
+        dag_run.run()
+
+        # All tasks should be successful
+        for tid in [
+            "run_time_variables",
+            "dimc_pre_check",
+            "data_load_write_disposition",
+            "data_load_task",
+            "dimc_post_check",
+        ]:
+            ti = dag_run.get_task_instance(tid)
+            assert ti.state == State.SUCCESS
+
+        mock_runtime.assert_called_once()
+        mock_pre.assert_called_once()
+        mock_write.assert_called_once()
+        mock_load.assert_called_once()
+        mock_post.assert_called_once()
