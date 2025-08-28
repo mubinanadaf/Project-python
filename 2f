@@ -1,0 +1,52 @@
+# after you create fake_airflow_models = types.ModuleType("airflow.models")
+fake_airflow_models._context_dag = None  # holds the "current" DAG during a with-block
+
+class FakeDAG:
+    def __init__(self, **kwargs):
+        self.dag_id = kwargs.get("dag_id")
+        self.schedule_interval = kwargs.get("schedule_interval")
+        self.catchup = kwargs.get("catchup", True)
+        self.max_active_runs = kwargs.get("max_active_runs", 16)
+        self.default_args = kwargs.get("default_args", {})
+        self.tasks = []
+
+    def add_task(self, t):
+        self.tasks.append(t)
+
+    def get_task(self, task_id):
+        for t in self.tasks:
+            if t.task_id == task_id:
+                return t
+        raise KeyError(task_id)
+
+    # NEW: support `with DAG(...) as dag:`
+    def __enter__(self):
+        # use the same module object you registered in sys.modules
+        import sys
+        sys.modules["airflow.models"]._context_dag = self
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        import sys
+        sys.modules["airflow.models"]._context_dag = None
+
+
+class FakePythonOperator:
+    def __init__(self, *, task_id, python_callable=None,
+                 on_success_callback=None, on_failure_callback=None,
+                 dag=None, **_):
+        self.task_id = task_id
+        self.python_callable = python_callable
+        self.on_success_callback = on_success_callback
+        self.on_failure_callback = on_failure_callback
+        self.upstream_task_ids, self.downstream_task_ids = set(), set()
+
+        # CHANGED: if no dag passed, attach to "current" DAG from the with-block
+        if dag is None:
+            import sys
+            dag = getattr(sys.modules["airflow.models"], "_context_dag", None)
+
+        if dag is not None and hasattr(dag, "add_task"):
+            dag.add_task(self)
+
+    # (keep your >> / << list-support code as you already added)
