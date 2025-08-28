@@ -1,0 +1,93 @@
+# tests/test_odin_bq_bq_data_load_dag.py
+import importlib
+import types
+from datetime import timedelta
+
+import pytest
+from airflow.models import DAG
+from airflow.operators.python import PythonOperator
+
+
+def load_module():
+    """
+    Import the DAG module.
+    Change the dotted path if your file is not top-level.
+    Example: importlib.import_module("dags.odin_bq_bq_data_load")
+    """
+    mod = importlib.import_module("odin_bq_bq_data_load")
+    assert isinstance(mod, types.ModuleType)
+    return mod
+
+
+def get_task(dag: DAG, task_id: str) -> PythonOperator:
+    assert task_id in dag.task_ids, f"Missing task_id={task_id}"
+    task = dag.get_task(task_id)
+    assert isinstance(task, PythonOperator), f"{task_id} is not a PythonOperator"
+    return task
+
+
+def test_dag_metadata_and_defaults():
+    mod = load_module()
+    dag: DAG = getattr(mod, "dag")
+    assert isinstance(dag, DAG)
+
+    # DAG settings from your screenshots
+    assert dag.dag_id == "odin_bq_bq_data_load"
+    assert dag.catchup is False
+    assert dag.schedule_interval is None
+    assert getattr(dag, "max_active_runs", 25) == 25
+
+    defaults = dag.default_args or {}
+    assert defaults.get("depends_on_past") is False
+    assert "start_date" in defaults
+    assert defaults.get("retries") == 3
+    assert defaults.get("retry_delay") == timedelta(minutes=1)
+
+
+@pytest.mark.parametrize(
+    "task_id, callable_name",
+    [
+        ("run_time_variables", "run_time_variables"),
+        ("dimc_pre_check", "dimc_pre_check"),
+        ("data_load_write_disposition", "data_load_write_disposition"),
+        ("data_load_task", "data_load_task"),
+        ("dimc_post_check", "dimc_post_check"),
+    ],
+)
+def test_tasks_exist_and_have_callable(task_id, callable_name):
+    mod = load_module()
+    dag: DAG = getattr(mod, "dag")
+
+    task = get_task(dag, task_id)
+
+    # callable may be imported into the DAG module or referenced from utils
+    fn = getattr(mod, callable_name, None)
+    if fn is None:
+        utils_mod = importlib.import_module("utils.cdp_common_functions")
+        fn = getattr(utils_mod, callable_name)
+
+    assert task.python_callable is fn
+    # You set provide_context=True in your DAG
+    assert getattr(task, "provide_context", True) is True
+    # Both callbacks should be set
+    assert callable(getattr(task, "on_success_callback"))
+    assert callable(getattr(task, "on_failure_callback"))
+
+
+def test_dependency_chain():
+    mod = load_module()
+    dag: DAG = getattr(mod, "dag")
+
+    chain = [
+        "run_time_variables",
+        "dimc_pre_check",
+        "data_load_write_disposition",
+        "data_load_task",
+        "dimc_post_check",
+    ]
+
+    for upstream, downstream in zip(chain, chain[1:]):
+        u = get_task(dag, upstream)
+        assert (
+            downstream in u.downstream_task_ids
+        ), f"{upstream} should flow to {downstream}"
