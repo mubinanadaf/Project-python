@@ -91,3 +91,92 @@ def test_dependency_chain():
         assert (
             downstream in u.downstream_task_ids
         ), f"{upstream} should flow to {downstream}"
+,.........
+
+
+# tests/test_odin_bq_bq_data_load_dag.py
+import unittest
+from unittest import mock
+import importlib
+from airflow.models import DAG
+from airflow.operators.python import PythonOperator
+
+
+class TestOdinBqBqDataLoadDag(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Import the DAG module
+        cls.mod = importlib.import_module("odin.dag.odin_bq_bq_data_load")
+        cls.dag: DAG = getattr(cls.mod, "dag")
+
+    def test_dag_metadata(self):
+        dag = self.dag
+        self.assertEqual(dag.dag_id, "odin_bq_bq_data_load")
+        self.assertFalse(dag.catchup)
+        self.assertIsNone(dag.schedule_interval)
+        self.assertEqual(getattr(dag, "max_active_runs", 25), 25)
+
+        defaults = dag.default_args or {}
+        self.assertIn("start_date", defaults)
+        self.assertEqual(defaults.get("retries"), 3)
+        self.assertEqual(defaults.get("depends_on_past"), False)
+
+    def test_all_tasks_present(self):
+        expected_tasks = [
+            "run_time_variables",
+            "dimc_pre_check",
+            "data_load_write_disposition",
+            "data_load_task",
+            "dimc_post_check",
+        ]
+        for task_id in expected_tasks:
+            self.assertIn(task_id, self.dag.task_ids)
+
+            task = self.dag.get_task(task_id)
+            self.assertIsInstance(task, PythonOperator)
+            self.assertTrue(callable(task.on_success_callback))
+            self.assertTrue(callable(task.on_failure_callback))
+
+    def test_dependencies(self):
+        chain = [
+            "run_time_variables",
+            "dimc_pre_check",
+            "data_load_write_disposition",
+            "data_load_task",
+            "dimc_post_check",
+        ]
+        for upstream, downstream in zip(chain, chain[1:]):
+            u = self.dag.get_task(upstream)
+            self.assertIn(downstream, u.downstream_task_ids)
+
+    @mock.patch("odin.dag.odin_bq_bq_data_load.run_time_variables")
+    @mock.patch("odin.dag.odin_bq_bq_data_load.dimc_pre_check")
+    @mock.patch("odin.dag.odin_bq_bq_data_load.data_load_write_disposition")
+    @mock.patch("odin.dag.odin_bq_bq_data_load.data_load_task")
+    @mock.patch("odin.dag.odin_bq_bq_data_load.dimc_post_check")
+    def test_operator_callables_are_patched(
+        self,
+        mock_post,
+        mock_load_task,
+        mock_write_disp,
+        mock_pre,
+        mock_run_time,
+    ):
+        """
+        This test ensures each PythonOperator is wired to the correct callable.
+        By patching them, we can assert that the DAG references the patched objects.
+        """
+        task_ids = [
+            ("run_time_variables", mock_run_time),
+            ("dimc_pre_check", mock_pre),
+            ("data_load_write_disposition", mock_write_disp),
+            ("data_load_task", mock_load_task),
+            ("dimc_post_check", mock_post),
+        ]
+        for task_id, mock_fn in task_ids:
+            task = self.dag.get_task(task_id)
+            self.assertIs(task.python_callable, mock_fn)
+
+
+if __name__ == "__main__":
+    unittest.main()
