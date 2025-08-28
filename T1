@@ -9,8 +9,37 @@ from unittest.mock import MagicMock
 
 class TestBqToBqDataLoadDag(unittest.TestCase):
     def setUp(self):
-        # ---------------- Fake Airflow setup (no real Airflow needed) ----------------
-        # Real-ish DAG that stores tasks and lets us inspect wiring.
+        # ------------------------------------------------------------------
+        # 1) Mock your utils package and its submodules BEFORE importing DAG
+        # ------------------------------------------------------------------
+        # Create a fake 'utils' package
+        utils_pkg = types.ModuleType("utils")
+        sys.modules["utils"] = utils_pkg
+
+        # utils.cdp_audit_logs
+        self.mock_log_audit = MagicMock(name="log_task_level_audit")
+        cdp_audit_logs = types.ModuleType("utils.cdp_audit_logs")
+        cdp_audit_logs.log_task_level_audit = self.mock_log_audit
+        sys.modules["utils.cdp_audit_logs"] = cdp_audit_logs
+
+        # utils.cdp_common_functions
+        self.mock_run_time = MagicMock(name="run_time_variables")
+        self.mock_pre      = MagicMock(name="dimc_pre_check")
+        self.mock_write    = MagicMock(name="data_load_write_disposition")
+        self.mock_load     = MagicMock(name="data_load_task")
+        self.mock_post     = MagicMock(name="dimc_post_check")
+
+        cdp_common_functions = types.ModuleType("utils.cdp_common_functions")
+        cdp_common_functions.run_time_variables          = self.mock_run_time
+        cdp_common_functions.dimc_pre_check              = self.mock_pre
+        cdp_common_functions.data_load_write_disposition = self.mock_write
+        cdp_common_functions.data_load_task              = self.mock_load
+        cdp_common_functions.dimc_post_check             = self.mock_post
+        sys.modules["utils.cdp_common_functions"] = cdp_common_functions
+
+        # ---------------------------------------------------------------
+        # 2) Mock airflow modules (no real Airflow needed in the tests)
+        # ---------------------------------------------------------------
         class FakeDAG:
             def __init__(self, **kwargs):
                 self.dag_id = kwargs.get("dag_id")
@@ -29,7 +58,6 @@ class TestBqToBqDataLoadDag(unittest.TestCase):
                         return t
                 raise KeyError(task_id)
 
-        # PythonOperator stub that supports >>, <<, set_upstream, set_downstream
         class FakePythonOperator:
             def __init__(
                 self,
@@ -61,26 +89,22 @@ class TestBqToBqDataLoadDag(unittest.TestCase):
                 return other
 
             def set_upstream(self, task):
-                # task -> self
                 self.upstream_task_ids.add(task.task_id)
                 task.downstream_task_ids.add(self.task_id)
 
             def set_downstream(self, task):
-                # self -> task
                 self.downstream_task_ids.add(task.task_id)
                 task.upstream_task_ids.add(self.task_id)
 
-        # Build fake airflow module tree
-        fake_airflow = types.ModuleType("airflow")
-        fake_airflow_models = types.ModuleType("airflow.models")
-        fake_airflow_utils = types.ModuleType("airflow.utils")
-        fake_airflow_utils_dates = types.ModuleType("airflow.utils.dates")
-        fake_airflow_ops = types.ModuleType("airflow.operators")
-        fake_airflow_ops_python = types.ModuleType("airflow.operators.python")
+        fake_airflow                 = types.ModuleType("airflow")
+        fake_airflow_models          = types.ModuleType("airflow.models")
+        fake_airflow_utils           = types.ModuleType("airflow.utils")
+        fake_airflow_utils_dates     = types.ModuleType("airflow.utils.dates")
+        fake_airflow_ops             = types.ModuleType("airflow.operators")
+        fake_airflow_ops_python      = types.ModuleType("airflow.operators.python")
 
-        # Return one FakeDAG instance and keep a handle to it
+        # Build a FakeDAG instance via a constructor so we can capture it
         self._dag_instance = None
-
         def _dag_ctor(**kwargs):
             self._dag_instance = FakeDAG(**kwargs)
             return self._dag_instance
@@ -96,54 +120,35 @@ class TestBqToBqDataLoadDag(unittest.TestCase):
         sys.modules["airflow.operators"] = fake_airflow_ops
         sys.modules["airflow.operators.python"] = fake_airflow_ops_python
 
-        # Mock your utils used by the DAG
-        self.mock_log_audit = MagicMock(name="log_task_level_audit")
-        sys.modules["utils.cdp_audit_logs"] = types.SimpleNamespace(
-            log_task_level_audit=self.mock_log_audit
-        )
+        self._fake_airflow = fake_airflow  # keep for asserting DAG ctor args later
 
-        self.mock_run_time = MagicMock(name="run_time_variables")
-        self.mock_pre = MagicMock(name="dimc_pre_check")
-        self.mock_write = MagicMock(name="data_load_write_disposition")
-        self.mock_load = MagicMock(name="data_load_task")
-        self.mock_post = MagicMock(name="dimc_post_check")
-
-        sys.modules["utils.cdp_common_functions"] = types.SimpleNamespace(
-            run_time_variables=self.mock_run_time,
-            dimc_pre_check=self.mock_pre,
-            data_load_write_disposition=self.mock_write,
-            data_load_task=self.mock_load,
-            dimc_post_check=self.mock_post,
-        )
-
-        # Ensure src is importable
+        # ---------------------------------------------------------------
+        # 3) Ensure 'src' on path and import the DAG module under test
+        # ---------------------------------------------------------------
         if "PYTHONPATH" not in os.environ:
             sys.path.insert(0, os.path.abspath("src"))
 
-        # Import module under test (builds DAG with our fakes)
+        # Adjust module path if your file name differs
         self.mod_path = "odin.dag.odin_bq_bq_data_load"
         self.mod = importlib.import_module(self.mod_path)
-        # Grab the constructed FakeDAG instance
         self.dag = self._dag_instance
-
-        # Keep for assertions
-        self._fake_airflow = fake_airflow
 
     def tearDown(self):
         for k in [
+            "utils",
+            "utils.cdp_audit_logs",
+            "utils.cdp_common_functions",
             "airflow",
             "airflow.models",
             "airflow.utils",
             "airflow.utils.dates",
             "airflow.operators",
             "airflow.operators.python",
-            "utils.cdp_audit_logs",
-            "utils.cdp_common_functions",
             self.mod_path,
         ]:
             sys.modules.pop(k, None)
 
-    # ------------------------------ Tests ---------------------------------
+    # ------------------------------ Tests ------------------------------
 
     def test_import_ok(self):
         try:
@@ -157,9 +162,9 @@ class TestBqToBqDataLoadDag(unittest.TestCase):
         self.assertIsNone(kwargs.get("schedule_interval"))
         self.assertFalse(kwargs.get("catchup", True))
         self.assertEqual(kwargs.get("max_active_runs"), 25)
-        default_args = kwargs.get("default_args", {})
-        self.assertIn("start_date", default_args)
-        self.assertEqual(default_args.get("retries"), 3)
+        defaults = kwargs.get("default_args", {})
+        self.assertIn("start_date", defaults)
+        self.assertEqual(defaults.get("retries"), 3)
 
     def test_tasks_exist_and_callables(self):
         expected = {
@@ -177,10 +182,10 @@ class TestBqToBqDataLoadDag(unittest.TestCase):
             self.assertIs(op.python_callable, fn, f"{tid} wired to wrong callable")
 
     def test_dependency_chain(self):
-        rt = self.dag.get_task("run_time_variables")
-        pre = self.dag.get_task("dimc_pre_check")
-        wd = self.dag.get_task("data_load_write_disposition")
-        dl = self.dag.get_task("data_load_task")
+        rt   = self.dag.get_task("run_time_variables")
+        pre  = self.dag.get_task("dimc_pre_check")
+        wd   = self.dag.get_task("data_load_write_disposition")
+        dl   = self.dag.get_task("data_load_task")
         post = self.dag.get_task("dimc_post_check")
 
         self.assertEqual(rt.downstream_task_ids, {"dimc_pre_check"})
@@ -194,7 +199,7 @@ class TestBqToBqDataLoadDag(unittest.TestCase):
         self.assertEqual(post.downstream_task_ids, set())
 
     def test_callbacks(self):
-        # run_time_variables: no callbacks; others: both callbacks -> log_task_level_audit
+        # run_time_variables typically has no callbacks; others should use audit callback
         rt = self.dag.get_task("run_time_variables")
         self.assertIsNone(rt.on_success_callback)
         self.assertIsNone(rt.on_failure_callback)
