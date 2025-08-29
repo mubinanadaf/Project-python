@@ -1,0 +1,49 @@
+import unittest
+from unittest.mock import patch, MagicMock
+
+
+class TestBQtoBQVars(unittest.TestCase):
+    def test_obj_variable_set_logs_when_config_missing(self):
+        # Adjust this import path to your project layout
+        import src.odin.odin_dag_bq_bq_variables as vars_mod
+
+        with patch.object(vars_mod, "storage") as mock_storage, \
+             self.assertLogs(level="INFO") as log:
+
+            # Arrange: simulate missing file in GCS
+            mock_client = MagicMock()
+            mock_bucket = MagicMock()
+            mock_blob = MagicMock()
+            mock_storage.Client.return_value = mock_client
+            mock_client.get_bucket.return_value = mock_bucket
+            mock_bucket.blob.return_value = mock_blob
+            mock_blob.download_as_string.side_effect = FileNotFoundError()
+
+            # Act
+            vars_mod.obj_variable_set(config_file="non_existent_config.json")
+
+        # Assert: an INFO log mentioning missing file was emitted
+        self.assertTrue(
+            any("non_existent_config.json file not found in bucket" in line for line in log.output),
+            f"Expected missing-file log not found. Logs: {log.output}",
+        )
+
+    @patch("src.odin.odin_dag_bq_bq_variables.Variable.get")
+    def test_variable_get_reads_expected_keys(self, mock_var_get):
+        # Adjust this import path if needed
+        import src.odin.odin_dag_bq_bq_variables as vars_mod
+
+        # Arrange: each Variable.get call returns a dummy dict
+        mock_var_get.side_effect = [
+            {"k1": "v1"},  # for app_common_variables_bq
+            {"k2": "v2"},  # for app_resource_variables_bq
+            {"k3": "v3"},  # for bqtobqobjects
+        ]
+
+        # Act
+        vars_mod.variable_get()
+
+        # Assert: called with the three expected keys (order-agnostic)
+        mock_var_get.assert_any_call(key="app_common_variables_bq",  deserialize_json=True)
+        mock_var_get.assert_any_call(key="app_resource_variables_bq", deserialize_json=True)
+        mock_var_get.assert_any_call(key="bqtobqobjects",             deserialize_json=True)
