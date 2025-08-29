@@ -1,0 +1,63 @@
+def setUp(self):
+    # 1) Your existing code …
+    #    - define FakePythonOperator (with context/_last_dag fallback)
+    #    - define FakeDAG (sets airflow._last_dag; __enter__/__exit__ to set/clear airflow.models._context_dag)
+    #    - create modules: fake_airflow, fake_airflow_models, fake_airflow_utils_dates, fake_airflow_ops, fake_airflow_ops_python
+    #    - register them in sys.modules:
+    #      sys.modules["airflow"] = fake_airflow
+    #      sys.modules["airflow.models"] = fake_airflow_models
+    #      sys.modules["airflow.utils.dates"] = fake_airflow_utils_dates
+    #      sys.modules["airflow.operators"] = fake_airflow_ops
+    #      sys.modules["airflow.operators.python"] = fake_airflow_ops_python
+    #    - create utils package & submodules:
+    #      sys.modules["utils"] = utils_pkg
+    #      sys.modules["utils.cdp_audit_logs"] = cdp_audit_logs
+    #      sys.modules["utils.cdp_common_functions"] = cdp_common_functions
+    #
+    # NOTE: ensure these two holders exist BEFORE importing the DAG
+    # fake_airflow_models._context_dag = None
+    # fake_airflow._last_dag = None
+
+    # ---------------------------------------------------------------
+    # 2) NOW import the DAG module and resolve a DAG instance
+    # ---------------------------------------------------------------
+    import importlib, sys
+
+    # pick the module path that matches your repo layout:
+    # If your file is data_pipeline/src/odin/odin_bq_bq_data_load.py, use:
+    MODULE_PATHS = [
+        "src.odin.odin_bq_bq_data_load",   # try this first
+        "odin.dag.odin_bq_bq_data_load",   # or this if your package is odin.dag
+    ]
+
+    self.mod = None
+    for mp in MODULE_PATHS:
+        try:
+            self.mod = importlib.import_module(mp)
+            break
+        except ModuleNotFoundError:
+            continue
+    assert self.mod is not None, "Could not import odin_bq_bq_data_load module. Check module path."
+
+    # try to get an exported DAG instance
+    dag = getattr(self.mod, "dag", None)
+
+    # if the file uses a factory, call it
+    if dag is None:
+        for fn in ("create_dag", "build_dag", "get_dag", "make_dag"):
+            if hasattr(self.mod, fn):
+                dag = getattr(self.mod, fn)()
+                break
+
+    # final fallbacks from our fakes (covers implicit patterns)
+    if dag is None:
+        dag = getattr(sys.modules["airflow"], "_last_dag", None)
+    if dag is None:
+        dag = getattr(sys.modules["airflow.models"], "_context_dag", None)
+
+    self.dag = dag
+    assert self.dag is not None, "No DAG instance found. Does your DAG module create/export it?"
+
+    # (optional) quick sanity; remove once green
+    # print("DAG:", getattr(self.dag, "dag_id", None),
+    #       "tasks:", [t.task_id for t in getattr(self.dag, "tasks", [])])
