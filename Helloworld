@@ -142,3 +142,37 @@ def test_assign_pii_tags(self, mock_get_schema_files_list, mock_get_pii_config, 
         ANY,         # entry_name
         {"CUSTOMER": {"email": True}}
     )
+
+
+
+
+.......
+@patch("src.odin.odin_corpsec_catalog_creation_composer.assign_pii_tags")
+@patch("src.odin.datacatalog_functions.get_file_as_json")
+def test_assign_pii_tags_success(self, mock_get_file_as_json, mock_assign_pii_tags):
+    # Arrange
+    mock_get_file_as_json.return_value = [
+        {"name": "id", "type": "STRING", "mode": "REQUIRED"},
+        {"name": "email", "type": "STRING", "mode": "NULLABLE"},
+    ]
+    # 👉 no side_effect here, so it simulates success
+    mock_assign_pii_tags.return_value = True
+
+    import src.odin.odin_corpsec_catalog_creation_composer as mod
+
+    with patch("src.odin.odin_corpsec_catalog_creation_composer.get_schema_files_list",
+               return_value=(["period.json"], ["corpsec_customer_schema_bq.json"])), \
+         patch("src.odin.odin_corpsec_catalog_creation_composer.get_pii_config",
+               return_value={"CUSTOMER": {"email": True}}):
+
+        with self.assertLogs(mod.LOGGER.name, level="INFO") as cap:
+            mod.create_fileset()
+
+    # Assert: assign_pii_tags called successfully
+    mock_assign_pii_tags.assert_called_once()
+
+    # ✅ Assert success log exists (proves try → else branch ran)
+    self.assertTrue(
+        any("assigning pii tags" in msg.lower() for msg in cap.output),
+        f"Expected success log in INFO, got: {cap.output}"
+    )
