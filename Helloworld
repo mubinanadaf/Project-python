@@ -116,3 +116,29 @@ if item not in valid_stage_names:
         "4/4 PROCESS TOC" if file_extension == ".toc" else
         "4/4 PROCESS FILE"
     )
+,......mm
+from unittest.mock import patch, ANY
+from google.api_core.exceptions import AlreadyExists
+
+@patch("src.odin.odin_corpsec_catalog_creation_composer.assign_pii_tags")
+@patch("src.odin.odin_corpsec_catalog_creation_composer.get_pii_config")
+@patch("src.odin.odin_corpsec_catalog_creation_composer.get_schema_files_list")
+def test_assign_pii_tags(self, mock_get_schema_files_list, mock_get_pii_config, mock_assign_pii_tags):
+    # Arrange: ensure one schema file + a matching pii key
+    mock_get_schema_files_list.return_value = (["period.json"], ["corpsec_customer_schema_bq.json"])
+    mock_get_pii_config.return_value = {"CUSTOMER": {"email": True}}
+
+    mock_assign_pii_tags.return_value = True   # don’t raise AlreadyExists here
+
+    import src.odin.odin_corpsec_catalog_creation_composer as odin_corpsec_catalog_creation_composer
+
+    # Act
+    odin_corpsec_catalog_creation_composer.create_fileset()
+
+    # Assert
+    mock_assign_pii_tags.assert_called_once_with(
+        "CUSTOMER",  # computed pii_key
+        ANY,         # col_tag_template_name
+        ANY,         # entry_name
+        {"CUSTOMER": {"email": True}}
+    )
