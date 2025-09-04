@@ -60,3 +60,41 @@ sys.modules["airflow.operators"] = airflow_operators
 sys.modules["airflow.operators.python"] = airflow_operators_python
 sys.modules["airflow.utils"] = airflow_utils
 sys.modules["airflow.utils.context"] = airflow_utils_context
+
+
+
+....
+import types
+from unittest.mock import MagicMock
+import sys
+
+# ================= Mock airflow.models.Variable =================
+mock_dag = MagicMock()
+mock_task = MagicMock()
+mock_task.task_id = "create_fileset_task"
+mock_dag.tasks = [mock_task]
+mock_dag.get_task.return_value = mock_task
+
+sys.modules["airflow.models"] = types.SimpleNamespace(
+    Variable=MagicMock(
+        get=lambda key, deserialize_json=True: {
+            "app_common_variables": {"config_bucket": "mock_bucket"},
+            "app_resource_variables": {"gcs_outbound_bucket": "test_bucket"},
+            "app_common_variables_refdata": {"config_bucket": "mock_bucket"},
+            "app_resource_variables_refdata": {
+                "gcs_outbound_bucket": "test_bucket",
+                "DRT_ID": "test_drt",
+                "bq_dataset": "ref_data_src",
+                "bq_target_dataset": "test_dataset.ref_data_src",
+            },
+            "app_common_variables_corpsec": {"config_bucket": "mock_bucket"},
+            "app_resource_variables_corpsec": {
+                "gcs_outbound_bucket": "test_bucket",
+                "DRT_ID": "test_drt",
+                "bq_dataset": "ref_data_src",
+                "bq_target_dataset": "test_dataset.ref_data_src",
+            },
+        }[key]
+    ),
+    DAG=mock_dag  # keep DAG mocked if needed
+)
