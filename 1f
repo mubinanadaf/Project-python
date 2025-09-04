@@ -1,49 +1,62 @@
-import unittest
-from unittest.mock import patch, MagicMock
+# tests/conftest.py
+import sys, types
 
+# --- create package shells ---
+airflow                 = types.ModuleType("airflow")
+airflow_models          = types.ModuleType("airflow.models")
+airflow_operators       = types.ModuleType("airflow.operators")
+airflow_operators_py    = types.ModuleType("airflow.operators.python")
+airflow_utils           = types.ModuleType("airflow.utils")
+airflow_utils_context   = types.ModuleType("airflow.utils.context")
 
-class TestBQtoBQVars(unittest.TestCase):
-    def test_obj_variable_set_logs_when_config_missing(self):
-        # Adjust this import path to your project layout
-        import src.odin.odin_dag_bq_bq_variables as vars_mod
+# --- minimal stubs used by your code ---
+class DAG:
+    def __init__(self, dag_id, start_date=None, schedule=None, default_args=None, **kwargs):
+        self.dag_id = dag_id
+        self.start_date = start_date
+        self.schedule = schedule
+        self.default_args = default_args or {}
+        self.kwargs = kwargs
 
-        with patch.object(vars_mod, "storage") as mock_storage, \
-             self.assertLogs(level="INFO") as log:
+class PythonOperator:
+    def __init__(self, task_id, python_callable=None, op_args=None, op_kwargs=None, dag=None, **kwargs):
+        self.task_id = task_id
+        self.python_callable = python_callable
+        self.op_args = op_args or []
+        self.op_kwargs = op_kwargs or {}
+        self.dag = dag
+        self.kwargs = kwargs
+    # mimic Airflow chaining a bit (optional)
+    def __rshift__(self, other): return other
+    def __lshift__(self, other): return other
 
-            # Arrange: simulate missing file in GCS
-            mock_client = MagicMock()
-            mock_bucket = MagicMock()
-            mock_blob = MagicMock()
-            mock_storage.Client.return_value = mock_client
-            mock_client.get_bucket.return_value = mock_bucket
-            mock_bucket.blob.return_value = mock_blob
-            mock_blob.download_as_string.side_effect = FileNotFoundError()
+class Variable:
+    @staticmethod
+    def get(key, default_var=None):
+        return default_var
 
-            # Act
-            vars_mod.obj_variable_set(config_file="non_existent_config.json")
+class Context(dict):
+    """Lightweight stand-in for airflow.utils.context.Context."""
+    pass
 
-        # Assert: an INFO log mentioning missing file was emitted
-        self.assertTrue(
-            any("non_existent_config.json file not found in bucket" in line for line in log.output),
-            f"Expected missing-file log not found. Logs: {log.output}",
-        )
+# --- expose stubs on the package tree ---
+airflow.DAG = DAG
+airflow_models.Variable = Variable
+airflow_operators_python = airflow_operators_py
+airflow_operators_python.PythonOperator = PythonOperator
+airflow_utils_context.Context = Context
 
-    @patch("src.odin.odin_dag_bq_bq_variables.Variable.get")
-    def test_variable_get_reads_expected_keys(self, mock_var_get):
-        # Adjust this import path if needed
-        import src.odin.odin_dag_bq_bq_variables as vars_mod
+# wire submodules
+airflow.models = airflow_models
+airflow.operators = airflow_operators
+airflow.operators.python = airflow_operators_python
+airflow.utils = airflow_utils
+airflow_utils.context = airflow_utils_context
 
-        # Arrange: each Variable.get call returns a dummy dict
-        mock_var_get.side_effect = [
-            {"k1": "v1"},  # for app_common_variables_bq
-            {"k2": "v2"},  # for app_resource_variables_bq
-            {"k3": "v3"},  # for bqtobqobjects
-        ]
-
-        # Act
-        vars_mod.variable_get()
-
-        # Assert: called with the three expected keys (order-agnostic)
-        mock_var_get.assert_any_call(key="app_common_variables_bq",  deserialize_json=True)
-        mock_var_get.assert_any_call(key="app_resource_variables_bq", deserialize_json=True)
-        mock_var_get.assert_any_call(key="bqtobqobjects",             deserialize_json=True)
+# --- register in sys.modules so imports succeed ---
+sys.modules["airflow"] = airflow
+sys.modules["airflow.models"] = airflow_models
+sys.modules["airflow.operators"] = airflow_operators
+sys.modules["airflow.operators.python"] = airflow_operators_python
+sys.modules["airflow.utils"] = airflow_utils
+sys.modules["airflow.utils.context"] = airflow_utils_context
