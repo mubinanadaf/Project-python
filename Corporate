@@ -1,30 +1,10 @@
-# ---- Put these lines at the very TOP of the test file ----
-import sys, types
-from unittest import mock
-
-# Ensure google.* parents exist
-sys.modules.setdefault("google", types.ModuleType("google"))
-sys.modules.setdefault("google.cloud", types.ModuleType("google.cloud"))
-
-# Stub the module your code imports:  from google.cloud import datacatalog_v1
-sys.modules["google.cloud.datacatalog_v1"] = mock.MagicMock()
-
-# If your env doesn't have google.api_core.exceptions, stub that too
-sys.modules.setdefault("google.api_core", types.ModuleType("google.api_core"))
-exceptions_mod = types.ModuleType("google.api_core.exceptions")
-class AlreadyExists(Exception): ...
-class MethodNotImplemented(Exception): ...
-exceptions_mod.AlreadyExists = AlreadyExists
-exceptions_mod.MethodNotImplemented = MethodNotImplemented
-sys.modules["google.api_core.exceptions"] = exceptions_mod
-# ----------------------------------------------------------
-
 
 # tests/test_odin_corpsec_catalog_creation_composer.py
-# ================================================
+# =====================================================
 # 1) Pre-import stubs so test collection doesn't fail on missing Google libs
-import sys, types
-from unittest import mock
+#    (This MUST be at the very top of the file.)
+import sys, types  # noqa: E402
+from unittest import mock  # noqa: E402
 
 # Ensure google.* parent packages exist
 sys.modules.setdefault("google", types.ModuleType("google"))
@@ -41,25 +21,21 @@ class MethodNotImplemented(Exception): ...
 _ex_mod.AlreadyExists = AlreadyExists
 _ex_mod.MethodNotImplemented = MethodNotImplemented
 sys.modules["google.api_core.exceptions"] = _ex_mod
-# ================================================
+# =====================================================
 
 # 2) Regular imports (safe now that stubs exist)
-from unittest import TestCase, mock
-import os
-
-# Airflow Variable (your test environment likely has Airflow; if not, you can keep using this import,
-# because we don't import at module top in application code—only here in tests)
-from airflow.models import Variable
+from unittest import TestCase, mock  # noqa: E402
+import os  # noqa: E402
+from airflow.models import Variable  # noqa: E402
 
 # Import your module under test (NOT the function directly)
 # so patches can target symbols on this module's namespace.
-import src.odin.odin_corpsec_catalog_creation_composer as mod
+import src.odin.odin_corpsec_catalog_creation_composer as mod  # noqa: E402
 
 
 class TestCreateFileset(TestCase):
 
-    # NOTE: Decorator closest to the function is the FIRST injected param.
-    # We patch the DataCatalog client and helpers exactly on your module path.
+    # Decorator closest to the function is the FIRST injected param.
     @mock.patch("src.odin.odin_corpsec_catalog_creation_composer.datacatalog_v1.DataCatalogClient")
     @mock.patch("src.odin.odin_corpsec_catalog_creation_composer.get_pii_config")
     @mock.patch("src.odin.odin_corpsec_catalog_creation_composer.get_schema_files_list")
@@ -84,8 +60,7 @@ class TestCreateFileset(TestCase):
         mock_dcc,  # datacatalog_v1.DataCatalogClient
     ):
         # --- Arrange ---
-
-        # Mock Airflow Variable.get exactly like your style
+        # Mock Airflow Variable.get (same style you’re using)
         Variable.get = mock.Mock(side_effect=lambda key, deserialize_json=False: {
             "app_common_variables_corpsec": {},
             "app_resource_variables_corp_sec": {
@@ -101,7 +76,6 @@ class TestCreateFileset(TestCase):
             {"key2": "value2"},
         ]
         mock_get_schema_files_list.return_value = ["file1", "file2"]
-
         mock_create_entry_group.return_value.name = "test_entry_group"
         mock_create_tag_templates.return_value = (
             "test_entry_tag_template",
@@ -116,10 +90,9 @@ class TestCreateFileset(TestCase):
         # --- Act ---
         mod.create_fileset()
 
-        # --- Assert (same style/paths as your code) ---
+        # --- Assert (same style as your code) ---
         mock_logger.info.assert_called()
 
-        # pii configs called for both files
         mock_get_pii_config.assert_any_call("data_catalogue/odin_corpsec_inputd_avro_info.json")
         mock_get_pii_config.assert_any_call("data_catalogue/odin_pii_info.json")
 
@@ -131,11 +104,8 @@ class TestCreateFileset(TestCase):
             "test_project",
             "us-central1",
         )
-
-        # schema retrieval for both files
         mock_get_schema_from_file.assert_any_call("schemas/dataset_table_schemas", "file1")
         mock_get_schema_from_file.assert_any_call("schemas/dataset_table_schemas", "file2")
-
         mock_create_entry.assert_called()
         mock_assign_pii_tags.assert_called()
         client_instance.create_tag.assert_called()
