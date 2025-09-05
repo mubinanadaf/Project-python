@@ -1,0 +1,72 @@
+# minimal extra patches so flow reaches create_tag()
+@patch("src.odin.odin_corpsec_catalog_creation_composer.create_entry_group")
+@patch("src.odin.odin_corpsec_catalog_creation_composer.create_tag_templates")
+@patch("src.odin.odin_corpsec_catalog_creation_composer.create_entry")
+@patch("src.odin.odin_corpsec_catalog_creation_composer.get_schema_from_file")
+@patch("src.odin.odin_corpsec_catalog_creation_composer.get_schema_files_list")
+@patch("src.odin.odin_corpsec_catalog_creation_composer.get_pii_config")
+@patch.dict(os.environ, {"GCP_PROJECT": "test_project"}, clear=False)
+@patch("src.odin.odin_corpsec_catalog_creation_composer.assign_pii_tags")
+@patch("src.odin.odin_corpsec_catalog_creation_composer.datacatalog_v1.DataCatalogClient")
+@patch("src.odin.datacatalog_functions.get_file_as_json")
+def test_create_tag_exception(self,
+                              mock_get_file_as_json,
+                              mock_dcc,
+                              mock_assign_pii_tags,
+                              mock_get_pii_config,
+                              mock_get_schema_files_list,
+                              mock_get_schema_from_file,
+                              mock_create_entry,
+                              mock_create_tag_templates,
+                              mock_create_entry_group):
+    from google.api_core.exceptions import AlreadyExists
+    import src.odin.odin_corpsec_catalog_creation_composer as odin_corpsec_catalog_creation_composer
+
+    # --- Arrange ---
+
+    # Make earlier steps succeed so we reach the tag-creation path
+    mock_create_entry_group.return_value.name = "eg"
+    mock_create_tag_templates.return_value = ("entry_tag_tmpl", "col_tag_tmpl")
+    mock_get_pii_config.side_effect = [{"k": "v"}, {"k2": "v2"}]
+    mock_get_schema_files_list.return_value = ["file1"]
+    mock_get_schema_from_file.return_value = {"schema": "s"}
+    mock_create_entry.return_value = "entry"
+
+    # If your code reads extra JSON (fine to return anything valid)
+    mock_get_file_as_json.return_value = [
+        {"name": "id", "type": "STRING", "mode": "REQUIRED"},
+        {"name": "amount", "type": "FLOAT", "mode": "NULLABLE"},
+    ]
+
+    # Use the *same* instance the code will call
+    client_instance = mock_dcc.return_value
+    client_instance.create_tag.side_effect = AlreadyExists("simulated!")
+
+    # Optional: Airflow Variable.get (if your function reads it)
+    from airflow.models import Variable
+    Variable.get = mock.MagicMock(side_effect=lambda key, deserialize_json=False: {
+        "app_common_variables_corpsec": {},
+        "app_resource_variables_corp_sec": {
+            "gcs_outbound_bucket": "test_bucket",
+            "DRT_ID": "test_drt_id",
+            "bq_target_dataset": "project:dataset",
+        }
+    }[key])
+
+    # --- Act ---
+    with self.assertLogs(level="INFO") as log:
+        try:
+            odin_corpsec_catalog_creation_composer.create_fileset()
+        except AlreadyExists as e:
+            # Your test’s original style kept this except — keep it harmless
+            self.assertIn("simulated", str(e))
+        except Exception as e:
+            self.fail("Exception didn't handled in DAG file")
+
+    # --- Assert ---
+    # the *instance* create_tag must have been called and raised AlreadyExists
+    client_instance.create_tag.assert_called()
+
+    # and warning must be logged by your except block
+    # (your code logs “… already exists …”)
+    self.assertTrue(any("already exists" in msg.lower() for msg in log.output))
