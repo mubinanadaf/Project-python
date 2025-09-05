@@ -18,3 +18,124 @@ exceptions_mod.AlreadyExists = AlreadyExists
 exceptions_mod.MethodNotImplemented = MethodNotImplemented
 sys.modules["google.api_core.exceptions"] = exceptions_mod
 # ----------------------------------------------------------
+
+
+# tests/test_odin_corpsec_catalog_creation_composer.py
+# ================================================
+# 1) Pre-import stubs so test collection doesn't fail on missing Google libs
+import sys, types
+from unittest import mock
+
+# Ensure google.* parent packages exist
+sys.modules.setdefault("google", types.ModuleType("google"))
+sys.modules.setdefault("google.cloud", types.ModuleType("google.cloud"))
+
+# Stub the package your code imports:  from google.cloud import datacatalog_v1
+sys.modules["google.cloud.datacatalog_v1"] = mock.MagicMock()
+
+# If exceptions package isn't installed, stub it too
+sys.modules.setdefault("google.api_core", types.ModuleType("google.api_core"))
+_ex_mod = types.ModuleType("google.api_core.exceptions")
+class AlreadyExists(Exception): ...
+class MethodNotImplemented(Exception): ...
+_ex_mod.AlreadyExists = AlreadyExists
+_ex_mod.MethodNotImplemented = MethodNotImplemented
+sys.modules["google.api_core.exceptions"] = _ex_mod
+# ================================================
+
+# 2) Regular imports (safe now that stubs exist)
+from unittest import TestCase, mock
+import os
+
+# Airflow Variable (your test environment likely has Airflow; if not, you can keep using this import,
+# because we don't import at module top in application code—only here in tests)
+from airflow.models import Variable
+
+# Import your module under test (NOT the function directly)
+# so patches can target symbols on this module's namespace.
+import src.odin.odin_corpsec_catalog_creation_composer as mod
+
+
+class TestCreateFileset(TestCase):
+
+    # NOTE: Decorator closest to the function is the FIRST injected param.
+    # We patch the DataCatalog client and helpers exactly on your module path.
+    @mock.patch("src.odin.odin_corpsec_catalog_creation_composer.datacatalog_v1.DataCatalogClient")
+    @mock.patch("src.odin.odin_corpsec_catalog_creation_composer.get_pii_config")
+    @mock.patch("src.odin.odin_corpsec_catalog_creation_composer.get_schema_files_list")
+    @mock.patch("src.odin.odin_corpsec_catalog_creation_composer.create_entry_group")
+    @mock.patch("src.odin.odin_corpsec_catalog_creation_composer.create_tag_templates")
+    @mock.patch("src.odin.odin_corpsec_catalog_creation_composer.create_entry")
+    @mock.patch("src.odin.odin_corpsec_catalog_creation_composer.get_schema_from_file")
+    @mock.patch("src.odin.odin_corpsec_catalog_creation_composer.assign_pii_tags")
+    @mock.patch.dict(os.environ, {"GCP_PROJECT": "test_project"})
+    @mock.patch("src.odin.odin_corpsec_catalog_creation_composer.LOGGER")
+    def test_create_fileset(
+        self,
+        mock_logger,
+        _env_patch,  # from patch.dict (not used directly)
+        mock_assign_pii_tags,
+        mock_get_schema_from_file,
+        mock_create_entry,
+        mock_create_tag_templates,
+        mock_create_entry_group,
+        mock_get_schema_files_list,
+        mock_get_pii_config,
+        mock_dcc,  # datacatalog_v1.DataCatalogClient
+    ):
+        # --- Arrange ---
+
+        # Mock Airflow Variable.get exactly like your style
+        Variable.get = mock.Mock(side_effect=lambda key, deserialize_json=False: {
+            "app_common_variables_corpsec": {},
+            "app_resource_variables_corp_sec": {
+                "gcs_outbound_bucket": "test_bucket",
+                "DRT_ID": "test_drt_id",
+                "bq_target_dataset": "project:dataset",
+            }
+        }[key])
+
+        # Return values (matching your screenshots 2 & 3)
+        mock_get_pii_config.side_effect = [
+            {"key1": "value1"},
+            {"key2": "value2"},
+        ]
+        mock_get_schema_files_list.return_value = ["file1", "file2"]
+
+        mock_create_entry_group.return_value.name = "test_entry_group"
+        mock_create_tag_templates.return_value = (
+            "test_entry_tag_template",
+            "test_col_tag_template",
+        )
+        mock_get_schema_from_file.return_value = {"schema": "test_schema"}
+        mock_create_entry.return_value = "test_entry_name"
+
+        client_instance = mock_dcc.return_value
+        client_instance.create_tag.return_value = None
+
+        # --- Act ---
+        mod.create_fileset()
+
+        # --- Assert (same style/paths as your code) ---
+        mock_logger.info.assert_called()
+
+        # pii configs called for both files
+        mock_get_pii_config.assert_any_call("data_catalogue/odin_corpsec_inputd_avro_info.json")
+        mock_get_pii_config.assert_any_call("data_catalogue/odin_pii_info.json")
+
+        mock_get_schema_files_list.assert_called_once()
+        mock_create_entry_group.assert_called_once()
+        mock_create_tag_templates.assert_called_once_with(
+            "odin_table_metadata",
+            "test_project_base_oaep_taxonomy",
+            "test_project",
+            "us-central1",
+        )
+
+        # schema retrieval for both files
+        mock_get_schema_from_file.assert_any_call("schemas/dataset_table_schemas", "file1")
+        mock_get_schema_from_file.assert_any_call("schemas/dataset_table_schemas", "file2")
+
+        mock_create_entry.assert_called()
+        mock_assign_pii_tags.assert_called()
+        client_instance.create_tag.assert_called()
