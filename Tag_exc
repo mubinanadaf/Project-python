@@ -1,0 +1,63 @@
+from unittest.mock import patch, MagicMock
+from google.api_core.exceptions import AlreadyExists
+from airflow.models import Variable
+import os
+
+@patch("src.odin.odin_corpsec_catalog_creation_composer.LOGGER")  # <-- patch module logger
+@patch("src.odin.odin_corpsec_catalog_creation_composer.datacatalog_v1.DataCatalogClient")  # <-- patch class on module path
+@patch("src.odin.odin_corpsec_catalog_creation_composer.create_entry")              # let flow reach create_tag
+@patch("src.odin.odin_corpsec_catalog_creation_composer.get_schema_from_file")
+@patch("src.odin.odin_corpsec_catalog_creation_composer.get_schema_files_list")
+@patch("src.odin.odin_corpsec_catalog_creation_composer.get_pii_config")
+@patch("src.odin.odin_corpsec_catalog_creation_composer.create_tag_templates")
+@patch("src.odin.odin_corpsec_catalog_creation_composer.create_entry_group")
+@patch.dict(os.environ, {"GCP_PROJECT": "test_project"}, clear=False)
+def test_create_tag_exception(
+    mock_create_entry_group,
+    mock_create_tag_templates,
+    mock_get_pii_config,
+    mock_get_schema_files_list,
+    mock_get_schema_from_file,
+    mock_create_entry,
+    mock_dcc,          # patched DataCatalogClient class
+    mock_logger,       # patched module LOGGER
+):
+    # ---- Arrange ----
+    # Airflow Variable.get (if your code reads it)
+    Variable.get = MagicMock(side_effect=lambda key, deserialize_json=False: {
+        "app_common_variables_corpsec": {},
+        "app_resource_variables_corp_sec": {
+            "gcs_outbound_bucket": "bucket",
+            "DRT_ID": "drt",
+            "bq_target_dataset": "project:dataset",
+        }
+    }[key])
+
+    # earlier helpers succeed so we reach create_tag
+    mock_create_entry_group.return_value.name = "eg"
+    mock_create_tag_templates.return_value = ("entry_tmpl", "col_tmpl")
+    mock_get_pii_config.side_effect = [{"k": "v"}, {"k2": "v2"}]
+    mock_get_schema_files_list.return_value = ["file1"]
+    mock_get_schema_from_file.return_value = {"schema": "s"}
+    mock_create_entry.return_value = "entry_name"
+
+    # Data Catalog client instance used by the module
+    client = mock_dcc.return_value
+    client.create_tag.side_effect = AlreadyExists("simulated!")  # <-- force the except AlreadyExists path
+
+    # ---- Act (your original try/except + assertLogs is kept) ----
+    import src.odin.odin_corpsec_catalog_creation_composer as mod
+    try:
+        with self.assertLogs(level="INFO") as log:
+            mod.create_fileset()
+    except AlreadyExists as e:
+        self.assertIn("simulated", str(e))
+    except Exception as e:
+        self.fail("Exception didn't handled in DAG file")
+
+    # ---- Assert ----
+    client.create_tag.assert_called()                # create_tag was attempted
+    mock_logger.warning.assert_called()              # we hit the warning in the except
+    # Optional: check message text
+    args, _ = mock_logger.warning.call_args
+    self.assertTrue(any("already exists" in str(a).lower() for a in args))
