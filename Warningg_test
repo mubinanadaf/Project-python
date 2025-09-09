@@ -49,3 +49,15 @@ class TestCreateTagWarning(TestCase):
         warn_text = " ".join(str(a) for a, _ in mock_logger.warning.call_args_list)
         self.assertIn("already exists", warn_text.lower())
         self.assertIn("my_entry_table", warn_text)
+
+
+
+
+,.......mmm...
+@patch("src.odin.odin_corpsec_catalog_creation_composer.LOGGER")
+@patch("src.odin.odin_corpsec_catalog_creation_composer.datacatalog_v1.DataCatalogClient.create_tag",
+       side_effect=AlreadyExists("tag exists"))
+def test_create_tag_already_exists_warning(mock_create_tag, mock_logger):
+    mod.create_fileset()
+    mock_create_tag.assert_called()
+    mock_logger.warning.assert_called()
