@@ -1,0 +1,51 @@
+from unittest import TestCase, mock
+from unittest.mock import patch
+from google.api_core.exceptions import AlreadyExists
+import os
+
+class TestCreateTagWarning(TestCase):
+    @patch.dict(os.environ, {"GCP_PROJECT": "test_project"}, clear=False)
+    @patch("src.odin.datacatalog_functions.get_file_as_json")  # keep if your file imports it
+    @patch("src.odin.odin_corpsec_catalog_creation_composer.LOGGER")
+    @patch("src.odin.odin_corpsec_catalog_creation_composer.datacatalog_v1.DataCatalogClient")
+    @patch("src.odin.odin_corpsec_catalog_creation_composer.get_pii_config")
+    @patch("src.odin.odin_corpsec_catalog_creation_composer.get_schema_files_list")
+    @patch("src.odin.odin_corpsec_catalog_creation_composer.get_schema_from_file")
+    @patch("src.odin.odin_corpsec_catalog_creation_composer.create_entry_group")
+    @patch("src.odin.odin_corpsec_catalog_creation_composer.create_tag_templates")
+    @patch("src.odin.odin_corpsec_catalog_creation_composer.create_entry")
+    def test_create_tag_already_exists_warning(
+        self,
+        mock_create_entry,
+        mock_create_tag_templates,
+        mock_create_entry_group,
+        mock_get_schema_from_file,
+        mock_get_schema_files_list,
+        mock_get_pii_config,
+        mock_dcc,          # DataCatalogClient (patched in THIS module)
+        mock_logger,       # LOGGER (patched in THIS module)
+        mock_get_file_as_json,
+    ):
+        # Arrange minimal data so loop runs
+        mock_get_pii_config.side_effect = [{"k": "v"}, {"k2": "v2"}]
+        mock_get_schema_files_list.return_value = ["file1"]
+        mock_get_schema_from_file.return_value = {"schema": "s"}
+        mock_create_entry_group.return_value.name = "eg"
+        mock_create_tag_templates.return_value = ("entry_tmpl", "col_tmpl")
+        mock_create_entry.return_value = "my_entry_table"
+
+        # Force the EXACT branch: client.create_tag -> AlreadyExists
+        client = mock_dcc.return_value
+        client.create_tag.side_effect = AlreadyExists("already exists")
+
+        # Act
+        import src.odin.odin_corpsec_catalog_creation_composer as mod
+        mod.create_fileset()
+
+        # Assert: we reached the branch and logged the warning
+        client.create_tag.assert_called()
+        self.assertTrue(mock_logger.warning.called, "LOGGER.warning was not called")
+        # Optional: assert message text contains the template/entry name parts
+        warn_text = " ".join(str(a) for a, _ in mock_logger.warning.call_args_list)
+        self.assertIn("already exists", warn_text.lower())
+        self.assertIn("my_entry_table", warn_text)
