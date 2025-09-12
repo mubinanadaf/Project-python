@@ -1,0 +1,201 @@
+CREATE OR REPLACE TABLE demo_src.customers (
+  customer_id   INT64,
+  full_name     STRING,
+  email         STRING,
+  signup_date   DATE,
+  last_updated  TIMESTAMP
+);
+
+INSERT INTO demo_src.customers VALUES
+(1,  'Alice Johnson',   'alice@example.com',   DATE '2024-01-10', TIMESTAMP '2025-08-01 09:00:00'),
+(2,  'Bob Smith',       'bob@example.com',     DATE '2024-02-15', TIMESTAMP '2025-08-01 09:05:00'),
+(3,  'Charlie Brown',   'charlie@example.com', DATE '2024-03-20', TIMESTAMP '2025-08-02 10:00:00'),
+(4,  'Diana Prince',    'diana@example.com',   DATE '2024-04-25', TIMESTAMP '2025-08-03 11:00:00'),
+(5,  'Ethan Hunt',      'ethan@example.com',   DATE '2024-05-05', TIMESTAMP '2025-08-03 12:00:00'),
+(6,  'Fiona Davis',     'fiona@example.com',   DATE '2024-05-12', TIMESTAMP '2025-08-03 14:30:00'),
+(7,  'George Miller',   'george@example.com',  DATE '2024-06-01', TIMESTAMP '2025-08-04 09:15:00'),
+(8,  'Hannah Scott',    'hannah@example.com',  DATE '2024-06-10', TIMESTAMP '2025-08-04 10:20:00'),
+(9,  'Ian Thomas',      'ian@example.com',     DATE '2024-07-02', TIMESTAMP '2025-08-05 11:10:00'),
+(10, 'Julia Roberts',   'julia@example.com',   DATE '2024-07-15', TIMESTAMP '2025-08-05 12:40:00'),
+(11, 'Kevin Lee',       'kevin@example.com',   DATE '2024-08-01', TIMESTAMP '2025-08-06 13:25:00'),
+(12, 'Laura Green',     'laura@example.com',   DATE '2024-08-05', TIMESTAMP '2025-08-06 14:10:00'),
+(13, 'Mark Wilson',     'mark@example.com',    DATE '2024-09-12', TIMESTAMP '2025-08-07 15:00:00'),
+(14, 'Nina Adams',      'nina@example.com',    DATE '2024-09-25', TIMESTAMP '2025-08-07 16:30:00'),
+(15, 'Oscar Perez',     'oscar@example.com',   DATE '2024-10-05', TIMESTAMP '2025-08-08 09:00:00'),
+(16, 'Paula White',     'paula@example.com',   DATE '2024-10-15', TIMESTAMP '2025-08-08 10:15:00'),
+(17, 'Quinn Harris',    'quinn@example.com',   DATE '2024-11-01', TIMESTAMP '2025-08-08 11:45:00'),
+(18, 'Rachel King',     'rachel@example.com',  DATE '2024-11-12', TIMESTAMP '2025-08-09 09:30:00'),
+(19, 'Sam Carter',      'sam@example.com',     DATE '2024-12-01', TIMESTAMP '2025-08-09 10:20:00'),
+(20, 'Tina Lewis',      'tina@example.com',    DATE '2024-12-20', TIMESTAMP '2025-08-10 08:50:00');
+
+,....
+CREATE OR REPLACE TABLE demo_src.orders (
+  order_id      INT64,
+  customer_id   INT64,
+  order_date    DATE,
+  order_amount  FLOAT64,
+  status        STRING,
+  last_updated  TIMESTAMP
+);
+
+INSERT INTO demo_src.orders VALUES
+(101, 1,  DATE '2025-08-01', 250.75, 'Completed', TIMESTAMP '2025-08-01 09:10:00'),
+(102, 1,  DATE '2025-08-01', 100.00, 'Completed', TIMESTAMP '2025-08-01 09:15:00'),
+(103, 2,  DATE '2025-08-02', 175.25, 'Pending',   TIMESTAMP '2025-08-02 10:05:00'),
+(104, 3,  DATE '2025-08-02', 300.50, 'Completed', TIMESTAMP '2025-08-02 11:00:00'),
+(105, 4,  DATE '2025-08-03', 450.00, 'Completed', TIMESTAMP '2025-08-03 11:15:00'),
+(106, 5,  DATE '2025-08-03', 90.00,  'Cancelled', TIMESTAMP '2025-08-03 12:05:00'),
+(107, 6,  DATE '2025-08-03', 120.50, 'Completed', TIMESTAMP '2025-08-03 14:40:00'),
+(108, 7,  DATE '2025-08-04', 210.10, 'Completed', TIMESTAMP '2025-08-04 09:20:00'),
+(109, 8,  DATE '2025-08-04', 180.75, 'Pending',   TIMESTAMP '2025-08-04 10:30:00'),
+(110, 9,  DATE '2025-08-05', 350.25, 'Completed', TIMESTAMP '2025-08-05 11:15:00'),
+(111, 10, DATE '2025-08-05', 500.00, 'Completed', TIMESTAMP '2025-08-05 12:45:00'),
+(112, 11, DATE '2025-08-06', 75.00,  'Completed', TIMESTAMP '2025-08-06 13:35:00'),
+(113, 12, DATE '2025-08-06', 220.25, 'Pending',   TIMESTAMP '2025-08-06 14:15:00'),
+(114, 13, DATE '2025-08-07', 600.50, 'Completed', TIMESTAMP '2025-08-07 15:10:00'),
+(115, 14, DATE '2025-08-07', 130.00, 'Completed', TIMESTAMP '2025-08-07 16:40:00'),
+(116, 15, DATE '2025-08-08', 200.00, 'Completed', TIMESTAMP '2025-08-08 09:20:00'),
+(117, 16, DATE '2025-08-08', 175.75, 'Pending',   TIMESTAMP '2025-08-08 10:20:00'),
+(118, 17, DATE '2025-08-08', 95.00,  'Completed', TIMESTAMP '2025-08-08 11:55:00'),
+(119, 18, DATE '2025-08-09', 400.25, 'Completed', TIMESTAMP '2025-08-09 09:40:00'),
+(120, 19, DATE '2025-08-09', 150.00, 'Completed', TIMESTAMP '2025-08-09 10:25:00');
+
+
+,....
+CREATE TABLE IF NOT EXISTS demo_tgt.customers_curated LIKE demo_src.customers;
+
+....
+
+CREATE TABLE IF NOT EXISTS demo_tgt.customer_sales_summary (
+  customer_id   INT64,
+  full_name     STRING,
+  total_sales   FLOAT64,
+  total_orders  INT64
+);
+
+....
+A. full load
+TRUNCATE TABLE demo_tgt.customers_curated;
+
+INSERT INTO demo_tgt.customers_curated
+SELECT * FROM demo_src.customers;
+
+.....
+b.incremental load
+write append 
+INSERT INTO demo_tgt.customers_curated
+SELECT * FROM demo_src.customers
+WHERE last_updated > @last_run_ts;
+...
+with upsert
+
+MERGE demo_tgt.customers_curated T
+USING (
+  SELECT * FROM demo_src.customers
+  WHERE last_updated > @last_run_ts
+) S
+ON T.customer_id = S.customer_id
+WHEN MATCHED THEN
+  UPDATE SET
+    full_name = S.full_name,
+    email     = S.email,
+    signup_date = S.signup_date,
+    last_updated = S.last_updated
+WHEN NOT MATCHED THEN
+  INSERT (customer_id, full_name, email, signup_date, last_updated)
+  VALUES (S.customer_id, S.full_name, S.email, S.signup_date, S.last_updated);
+
+.....some transformations
+SELECT
+  c.customer_id,
+  c.full_name,
+  SUM(o.order_amount) AS total_sales,
+  COUNT(o.order_id)   AS total_orders
+FROM demo_src.customers c
+JOIN demo_src.orders o
+  ON c.customer_id = o.customer_id
+GROUP BY c.customer_id, c.full_name;
+
+......
+
+
+-- 1) Create a staging table (schema matches the target)
+CREATE OR REPLACE TABLE demo_tgt.customer_sales_summary_stg AS
+WITH line AS (
+  SELECT
+    o.customer_id,
+    SUM(o.order_amount) AS total_sales,
+    COUNT(*)           AS total_orders
+  FROM demo_src.orders o
+  GROUP BY o.customer_id
+)
+SELECT
+  c.customer_id,
+  c.full_name,
+  line.total_sales,
+  line.total_orders
+FROM demo_src.customers c
+JOIN line USING (customer_id);
+.......
+
+MERGE demo_tgt.customer_sales_summary T
+USING demo_tgt.customer_sales_summary_stg S
+ON T.customer_id = S.customer_id
+
+WHEN MATCHED AND (
+  IFNULL(T.full_name, '')     != IFNULL(S.full_name, '') OR
+  IFNULL(T.total_sales, 0)    != IFNULL(S.total_sales, 0) OR
+  IFNULL(T.total_orders, 0)   != IFNULL(S.total_orders, 0)
+) THEN
+  UPDATE SET
+    full_name   = S.full_name,
+    total_sales = S.total_sales,
+    total_orders= S.total_orders
+
+WHEN NOT MATCHED THEN
+  INSERT (customer_id, full_name, total_sales, total_orders)
+  VALUES (S.customer_id, S.full_name, S.total_sales, S.total_orders);
+
+OR
+
+
+
+MERGE demo_tgt.customer_sales_summary T
+USING (
+  WITH line AS (
+    SELECT
+      o.customer_id,
+      SUM(o.order_amount) AS total_sales,
+      COUNT(*)           AS total_orders
+    FROM demo_src.orders o
+    GROUP BY o.customer_id
+  )
+  SELECT
+    c.customer_id,
+    c.full_name,
+    line.total_sales,
+    line.total_orders
+  FROM demo_src.customers c
+  JOIN line USING (customer_id)
+) S
+ON T.customer_id = S.customer_id
+
+WHEN MATCHED AND (
+  IFNULL(T.full_name, '')     != IFNULL(S.full_name, '') OR
+  IFNULL(T.total_sales, 0)    != IFNULL(S.total_sales, 0) OR
+  IFNULL(T.total_orders, 0)   != IFNULL(S.total_orders, 0)
+) THEN
+  UPDATE SET
+    full_name   = S.full_name,
+    total_sales = S.total_sales,
+    total_orders= S.total_orders
+
+WHEN NOT MATCHED THEN
+  INSERT (customer_id, full_name, total_sales, total_orders)
+  VALUES (S.customer_id, S.full_name, S.total_sales, S.total_orders);
+
+....
+
+
+
+
