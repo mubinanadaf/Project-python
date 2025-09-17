@@ -1,0 +1,103 @@
+Perfect — the table you shared (customer_history) already has the right structure for Slowly Changing Dimension Type 2 (SCD2):
+
+customer_id (natural/business key)
+
+name, email, address (attributes that can change)
+
+effective_from, effective_to (date range for row validity)
+
+is_current (flag for the active record)
+
+
+Let’s walk step by step with SQL queries you can run in BigQuery.
+
+
+---
+
+Step 1: Initial Load
+
+For the very first load, you insert all customer records with effective_from = CURRENT_DATE, effective_to = 9999-12-31, is_current = TRUE.
+
+INSERT INTO customer_history (customer_id, name, email, address, effective_from, effective_to, is_current)
+VALUES
+  (1, 'Alice', 'alice@ex.com', 'NY', CURRENT_DATE, DATE '9999-12-31', TRUE),
+  (2, 'Bob',   'bob@ex.com',   'LA', CURRENT_DATE, DATE '9999-12-31', TRUE);
+
+
+---
+
+Step 2: Detect Change (New Data vs Existing Data)
+
+Assume you receive a new daily load (staging_customers) with updated details:
+
+SELECT * FROM staging_customers;
+
+Example staging data:
+
+customer_id	name	email	address
+
+1	Alice	alice@ex.com	SF
+2	Bob	bob@ex.com	LA
+3	John	john@ex.com	TX
+
+
+
+---
+
+Step 3: Close Out Old Record When Change Detected
+
+If the attribute value is different (ex: address changed for Alice), update the existing active record:
+
+UPDATE customer_history
+SET effective_to = DATE_SUB(CURRENT_DATE, INTERVAL 1 DAY),
+    is_current = FALSE
+WHERE customer_id = 1
+  AND is_current = TRUE;
+
+
+---
+
+Step 4: Insert the New Version
+
+Insert the updated row for Alice and new row for John:
+
+INSERT INTO customer_history (customer_id, name, email, address, effective_from, effective_to, is_current)
+VALUES
+  (1, 'Alice', 'alice@ex.com', 'SF', CURRENT_DATE, DATE '9999-12-31', TRUE),
+  (3, 'John',  'john@ex.com',  'TX', CURRENT_DATE, DATE '9999-12-31', TRUE);
+
+
+---
+
+Step 5: Merge Statement for Automation
+
+In BigQuery you can wrap this logic in a single MERGE statement so SCD2 happens automatically:
+
+MERGE customer_history T
+USING staging_customers S
+ON T.customer_id = S.customer_id AND T.is_current = TRUE
+
+WHEN MATCHED AND (
+     T.name    != S.name
+  OR T.email   != S.email
+  OR T.address != S.address
+) THEN
+  -- Close out old record
+  UPDATE SET effective_to = DATE_SUB(CURRENT_DATE, INTERVAL 1 DAY),
+             is_current = FALSE
+
+WHEN NOT MATCHED THEN
+  -- Insert new record (either updated or brand new)
+  INSERT (customer_id, name, email, address, effective_from, effective_to, is_current)
+  VALUES (S.customer_id, S.name, S.email, S.address, CURRENT_DATE, DATE '9999-12-31', TRUE);
+
+
+---
+
+✅ After running this, your customer_history table will always maintain historical versions while keeping only one active row (is_current = TRUE) for each customer.
+
+
+---
+
+Do you want me to write a sample dataset (20 rows) and then show you full queries (with staging + merge) so you can test end-to-end in your BigQuery?
+
