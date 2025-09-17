@@ -1,0 +1,151 @@
+Awesome — here’s a complete, copy-paste-ready SCD2 demo you can run in BigQuery. It creates the history table, loads 20 starter rows, then simulates a Day-2 file with changes + new customers and applies a single MERGE to handle SCD2.
+
+1) Create the SCD2 history table
+
+-- Adjust dataset name as needed
+CREATE TABLE IF NOT EXISTS demo.customer_history (
+  customer_id   INT64,
+  name          STRING,
+  email         STRING,
+  address       STRING,
+  effective_from DATE,
+  effective_to   DATE,
+  is_current     BOOL
+)
+PARTITION BY effective_from
+CLUSTER BY customer_id;
+
+2) Day-1 staging (20 rows)
+
+-- Replace table each day when you land a new file
+CREATE OR REPLACE TABLE demo.staging_customers AS
+SELECT * FROM UNNEST([
+  STRUCT(1  AS customer_id, 'Alice'  AS name, 'alice@ex.com'  AS email, 'NY' AS address),
+  (2,  'Bob',     'bob@ex.com',     'LA'),
+  (3,  'Charlie', 'charlie@ex.com', 'SF'),
+  (4,  'Daisy',   'daisy@ex.com',   'TX'),
+  (5,  'Ethan',   'ethan@ex.com',   'NY'),
+  (6,  'Fiona',   'fiona@ex.com',   'NJ'),
+  (7,  'Grace',   'grace@ex.com',   'FL'),
+  (8,  'Henry',   'henry@ex.com',   'WA'),
+  (9,  'Ivy',     'ivy@ex.com',     'MA'),
+  (10, 'Jack',    'jack@ex.com',    'IL'),
+  (11, 'Kara',    'kara@ex.com',    'GA'),
+  (12, 'Liam',    'liam@ex.com',    'CO'),
+  (13, 'Mona',    'mona@ex.com',    'AZ'),
+  (14, 'Nora',    'nora@ex.com',    'OR'),
+  (15, 'Owen',    'owen@ex.com',    'UT'),
+  (16, 'Pam',     'pam@ex.com',     'MI'),
+  (17, 'Quinn',   'quinn@ex.com',   'VA'),
+  (18, 'Rita',    'rita@ex.com',    'NC'),
+  (19, 'Sam',     'sam@ex.com',     'PA'),
+  (20, 'Tina',    'tina@ex.com',    'MN')
+]);
+
+Initial load into customer_history
+
+INSERT INTO demo.customer_history
+(customer_id, name, email, address, effective_from, effective_to, is_current)
+SELECT
+  customer_id, name, email, address,
+  CURRENT_DATE(), DATE '9999-12-31', TRUE
+FROM demo.staging_customers;
+
+3) Day-2 staging with changes + new customers
+
+Change Alice address to SF
+
+Change Bob email
+
+Change Kara name to Kara Lynn
+
+Change Mona address to NV
+
+Change Sam address to NY
+
+Add 3 new customers (21–23)
+
+
+CREATE OR REPLACE TABLE demo.staging_customers AS
+SELECT * FROM UNNEST([
+  (1,  'Alice',    'alice@ex.com',   'SF'),  -- address changed
+  (2,  'Bob',      'bobby@ex.com',   'LA'),  -- email changed
+  (3,  'Charlie',  'charlie@ex.com', 'SF'),
+  (4,  'Daisy',    'daisy@ex.com',   'TX'),
+  (5,  'Ethan',    'ethan@ex.com',   'NY'),
+  (6,  'Fiona',    'fiona@ex.com',   'NJ'),
+  (7,  'Grace',    'grace@ex.com',   'FL'),
+  (8,  'Henry',    'henry@ex.com',   'WA'),
+  (9,  'Ivy',      'ivy@ex.com',     'MA'),
+  (10, 'Jack',     'jack@ex.com',    'IL'),
+  (11, 'Kara Lynn','kara@ex.com',    'GA'),  -- name changed
+  (12, 'Liam',     'liam@ex.com',    'CO'),
+  (13, 'Mona',     'mona@ex.com',    'NV'),  -- address changed
+  (14, 'Nora',     'nora@ex.com',    'OR'),
+  (15, 'Owen',     'owen@ex.com',    'UT'),
+  (16, 'Pam',      'pam@ex.com',     'MI'),
+  (17, 'Quinn',    'quinn@ex.com',   'VA'),
+  (18, 'Rita',     'rita@ex.com',    'NC'),
+  (19, 'Sam',      'sam@ex.com',     'NY'),  -- address changed
+  (20, 'Tina',     'tina@ex.com',    'MN'),
+  (21, 'Uma',      'uma@ex.com',     'CA'),  -- NEW
+  (22, 'Vik',      'vik@ex.com',     'WA'),  -- NEW
+  (23, 'Walt',     'walt@ex.com',    'FL')   -- NEW
+]);
+
+4) Single MERGE to apply SCD2
+
+This closes current rows when attributes change and inserts new versions (or brand-new customers).
+
+MERGE demo.customer_history T
+USING demo.staging_customers S
+ON T.customer_id = S.customer_id AND T.is_current = TRUE
+
+WHEN MATCHED AND (
+     COALESCE(T.name,   '') != COALESCE(S.name,   '')
+  OR COALESCE(T.email,  '') != COALESCE(S.email,  '')
+  OR COALESCE(T.address,'') != COALESCE(S.address,'')
+) THEN
+  UPDATE SET
+    effective_to = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY),
+    is_current   = FALSE
+
+WHEN NOT MATCHED THEN
+  INSERT (customer_id, name, email, address, effective_from, effective_to, is_current)
+  VALUES (S.customer_id, S.name, S.email, S.address, CURRENT_DATE(), DATE '9999-12-31', TRUE);
+
+5) Helpful checks
+
+Current snapshot
+
+SELECT * FROM demo.customer_history
+WHERE is_current = TRUE
+ORDER BY customer_id;
+
+History for a single customer
+
+SELECT * FROM demo.customer_history
+WHERE customer_id = 1
+ORDER BY effective_from;
+
+Count of versions per customer
+
+SELECT customer_id, COUNT(*) AS version_count
+FROM demo.customer_history
+GROUP BY customer_id
+ORDER BY version_count DESC, customer_id;
+
+
+---
+
+Notes / options
+
+Keep the staging table exactly one row per customer per load; if it can have duplicates, dedupe it in a CTE before the MERGE.
+
+You can add more attributes (phone, city, etc.) — just include them in both the schema and the change-detection predicate in the MERGE.
+
+For performance, the PARTITION BY effective_from and CLUSTER BY customer_id choices are good defaults for SCD2 patterns.
+
+
+If you want, I can bundle these into a single SQL script with comments that you can run cell-by-cell in the BigQuery editor.
+
