@@ -1,0 +1,9 @@
+# Handle optional parameters safely
+params = obj.get("parameters", {}) or {}
+
+# Replace SOURCE_DATASET placeholder with value from env_vars if present
+if params.get("SOURCE_DATASET") in ("${env:sfr_outbound_dataset}", "sfr_outbound_dataset"):
+    params["SOURCE_DATASET"] = env_vars.get("sfr_outbound_dataset", params.get("SOURCE_DATASET"))
+
+# Always assign parameters back into object_config
+object_config["parameters"] = params
