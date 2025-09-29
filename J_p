@@ -1,0 +1,137 @@
+[
+  {
+    "name": "ODIN_PRODUCT_HIERARCHY_ID",
+    "type": "INTEGER",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "PROD_SRVC_TXNMY_KEY",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "PROD_SRVC_CLS_TRCKNG_ID",
+    "type": "INTEGER",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "PROD_SRVC_CLS_UPDTD_DT",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "PROD_SRVC_TYP_TRCKNG_ID",
+    "type": "INTEGER",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "PROD_SRVC_TYP_UPDTD_DT",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "PROD_SRVC_SUB_TYP_TRCKNG_ID",
+    "type": "INTEGER",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "PROD_SRVC_SUB_TYP_UPDTD_DT",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "PROD_SRVC_CLS_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "PROD_SRVC_TYP_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "PROD_SRVC_SUB_TYP_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "DML_ACTN_FLG",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LTST_REC_IND",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "SRC_SYS_ID",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "SRC_SYS_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "HASH_KEY",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "RFDS_EXECN_ID",
+    "type": "INTEGER",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "RFDS_EXECN_TS",
+    "type": "DATETIME",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "PROD_CLS_DESC",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "PROD_TYP_DESC",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "PROD_SUB_TYP_DESC",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ASOFDT",
+    "type": "DATE",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ODIN_JOB_EXECUTION_ID",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ODIN_TASK_EXECUTION_ID",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ODIN_CHUNK_EXECUTION_ID",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ODIN_VERSION",
+    "type": "INTEGER",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LAST_LOADED_DT",
+    "type": "DATE",
+    "mode": "NULLABLE"
+  }
+]
