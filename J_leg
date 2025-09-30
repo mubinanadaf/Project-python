@@ -1,0 +1,242 @@
+[
+  {
+    "name": "ODIN_LEGAL_ENTITY_ID",
+    "type": "INTEGER",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "LE_GEMS_KEY",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LE_GEMS_ID",
+    "type": "INTEGER",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LE_GEMS_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ENTY_TYP",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "BUS_ENTY_PRMRY_ACTVTY",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "BUS_ENTY_SCNDRY_ACTVTY",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LE_STAT_GEMS",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "STAT_EFFCT_FRM_DT",
+    "type": "DATETIME",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LST_STAT_CHG_DT",
+    "type": "DATETIME",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "GL_ENTY_ID",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "BUS_ENTY_RPTNG_ADDR",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "BUS_ENTY_RPTNG_CITY",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "BUS_ENTY_RPTNG_STATE",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "BUS_ENTY_SCNDRY_ADDR",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "BUS_ENTY_SCNDRY_CITY",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "BUS_ENTY_SCNDRY_STATE",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LE_CNTCT_USR_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "BUS_ENTY_ATRNY_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "JRSDN_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "BUS_ENTY_RGN_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ISO2_CNTRY_CD",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LVL_1_ORG_UNIT_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LVL_2_ORG_UNIT_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LVL_3_ORG_UNIT_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LVL_4_ORG_UNIT_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LVL_5_ORG_UNIT_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "BUS_ENTY_ACCTNG_TRTMNT_DESC",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "BUS_ENTY_RSSD_ID",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LE_TIER_ASGND",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LE_TIER_RATNL",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "BUS_ENTY_LTO_JRSDN_CD",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "AS_OF_DATE",
+    "type": "DATE",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "RISK_ASSESSABLE",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "DML_ACTN_FLG",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LTST_REC_IND",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "SRC_SYS_ID",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "SRC_SYS_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "HASH_KEY",
+    "type": "STRING",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "RFDS_EXECN_ID",
+    "type": "INTEGER",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "RFDS_EXECN_TS",
+    "type": "DATETIME",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "REG_W_STATUS",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ASOFDT",
+    "type": "DATE",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ODIN_VERSION",
+    "type": "INTEGER",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ODIN_JOB_EXECUTION_ID",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ODIN_TASK_EXECUTION_ID",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ODIN_CHUNK_EXECUTION_ID",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LAST_LOADED_DT",
+    "type": "DATE",
+    "mode": "NULLABLE"
+  }
+]
