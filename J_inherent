@@ -1,0 +1,73 @@
+[
+  {
+    "name": "ODIN_INHERENT_RISK_RATING_ID",
+    "type": "INTEGER",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "INHRNT_RISK_RTG_KEY",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "INHRNT_RISK_RTG_ID",
+    "type": "INTEGER",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "INHRNT_RISK_RTG_CD",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "INHRNT_RISK_RTG_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "INHRNT_RISK_RTG_DESC",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "DML_ACTN_FLG",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "LTST_REC_IND",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "SRC_SYS_ID",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "SRC_SYS_NM",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "HASH_KEY",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "RFDS_EXECN_ID",
+    "type": "INTEGER",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "RFDS_EXECN_TS",
+    "type": "DATETIME",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ASOFDT",
+    "type": "DATETIME",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "ODIN_JOB_EXECUTION
