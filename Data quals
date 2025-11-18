@@ -1,0 +1,224 @@
+from __future__ import annotations
+
+import json
+import time
+from datetime import datetime, timedelta
+
+import requests
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from google.auth import default
+from google.auth.transport.requests import Request
+
+# -------------------------------------------------------------------
+# CONFIG
+# -------------------------------------------------------------------
+PROJECT_ID = "sandbox-corp-odin-dev1-f930"
+REGION = "us-central1"
+
+DATASET = "ref_data_src"
+TABLE = "risk_driver"
+
+# This will be the Dataplex DataScan ID
+SCAN_ID = "dq-risk-driver"
+
+# -------------------------------------------------------------------
+# AUTH HELPERS
+# -------------------------------------------------------------------
+def get_auth_headers():
+    """Get OAuth token for Dataplex REST API."""
+    credentials, _ = default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    credentials.refresh(Request())
+    return {
+        "Authorization": f"Bearer {credentials.token}",
+        "Content-Type": "application/json",
+    }
+
+# -------------------------------------------------------------------
+# DQ RULES (HARDCODED)
+# -------------------------------------------------------------------
+def build_dq_scan_body():
+    """
+    Create the DataScan body with hard-coded rules.
+    Matches your YAML intent:
+
+      - ODIN_RISK_DRIVER_ID completeness (not null)
+      - ODIN_RISK_DRIVER_ID uniqueness
+      - RISK_DRIVER_LEVEL_2_RISK_DRIVER_TAXONOMY_ID >= 0
+      - RISK_DRIVER_LEVEL_3_SEQUENCE >= 0
+      - LAST_LOADED_DT completeness (not null)
+    """
+    rules = [
+        {
+            "column": "ODIN_RISK_DRIVER_ID",
+            "nonNullExpectation": {},
+            "dimension": "COMPLETENESS",
+            "threshold": 1.0,
+        },
+        {
+            "column": "ODIN_RISK_DRIVER_ID",
+            "uniquenessExpectation": {},
+            "dimension": "UNIQUENESS",
+            "threshold": 1.0,
+        },
+        {
+            "column": "RISK_DRIVER_LEVEL_2_RISK_DRIVER_TAXONOMY_ID",
+            "rangeExpectation": {"minValue": "0"},
+            "dimension": "VALIDITY",
+        },
+        {
+            "column": "RISK_DRIVER_LEVEL_3_SEQUENCE",
+            "rangeExpectation": {"minValue": "0"},
+            "dimension": "VALIDITY",
+        },
+        {
+            "column": "LAST_LOADED_DT",
+            "nonNullExpectation": {},
+            "dimension": "COMPLETENESS",
+            "threshold": 1.0,
+        },
+    ]
+
+    body = {
+        "data": {
+            "resource": (
+                f"//bigquery.googleapis.com/projects/{PROJECT_ID}"
+                f"/datasets/{DATASET}/tables/{TABLE}"
+            )
+        },
+        "dataQualitySpec": {
+            "rules": rules,
+        },
+    }
+    return body
+
+# -------------------------------------------------------------------
+# PYTHON CALLABLES
+# -------------------------------------------------------------------
+def create_or_update_scan(**context):
+    """
+    Create the DataScan once (idempotent).
+    POST /dataScans?dataScanId=...
+    If it already exists -> 409, which we ignore.
+    """
+    headers = get_auth_headers()
+    body = build_dq_scan_body()
+
+    url = (
+        f"https://dataplex.googleapis.com/v1/projects/{PROJECT_ID}"
+        f"/locations/{REGION}/dataScans?dataScanId={SCAN_ID}"
+    )
+
+    response = requests.post(url, headers=headers, data=json.dumps(body))
+    print(f"Create DataScan response: {response.status_code} {response.text}")
+
+    if response.status_code in (200, 201):
+        print("DataScan created successfully.")
+    elif response.status_code == 409:
+        # Already exists – OK, but we may want to update its config.
+        print("DataScan already exists – continuing.")
+    else:
+        raise Exception(f"Failed to create DataScan: {response.status_code} {response.text}")
+
+
+def run_dq_scan(**context):
+    """
+    Trigger a DataScan run.
+    POST /dataScans/{SCAN_ID}:run
+    """
+    headers = get_auth_headers()
+    url = (
+        f"https://dataplex.googleapis.com/v1/projects/{PROJECT_ID}"
+        f"/locations/{REGION}/dataScans/{SCAN_ID}:run"
+    )
+
+    response = requests.post(url, headers=headers)
+    print(f"Run DataScan response: {response.status_code} {response.text}")
+
+    if response.status_code not in (200, 201):
+        raise Exception(f"Failed to trigger DQ scan: {response.status_code} {response.text}")
+
+
+def check_dq_scan_status(**context):
+    """
+    Poll the jobs endpoint until the last job is SUCCEEDED / FAILED / CANCELLED.
+    GET /dataScans/{SCAN_ID}/jobs
+    """
+    headers = get_auth_headers()
+    url = (
+        f"https://dataplex.googleapis.com/v1/projects/{PROJECT_ID}"
+        f"/locations/{REGION}/dataScans/{SCAN_ID}/jobs"
+    )
+
+    timeout_minutes = 15
+    poll_interval_seconds = 30
+    deadline = time.time() + timeout_minutes * 60
+
+    while True:
+        if time.time() > deadline:
+            raise TimeoutError("Timed out waiting for DQ job to finish")
+
+        resp = requests.get(url, headers=headers)
+        print(f"Jobs status response: {resp.status_code} {resp.text}")
+
+        if resp.status_code != 200:
+            raise Exception(f"Failed to get jobs: {resp.status_code} {resp.text}")
+
+        jobs = resp.json().get("jobs", [])
+        if not jobs:
+            print("No jobs yet. Sleeping...")
+            time.sleep(poll_interval_seconds)
+            continue
+
+        # Take the most recent job (index 0)
+        job = jobs[0]
+        state = job.get("state")
+        print(f"Latest job state: {state}")
+
+        if state == "SUCCEEDED":
+            print("DQ scan SUCCEEDED.")
+            return
+        elif state in ("FAILED", "CANCELLED", "ABORTED"):
+            raise Exception(f"DQ scan {state}: {job}")
+        else:
+            print("DQ scan still running... waiting...")
+            time.sleep(poll_interval_seconds)
+
+# -------------------------------------------------------------------
+# DAG DEFINITION
+# -------------------------------------------------------------------
+default_args = {
+    "owner": "dataplex",
+    "depends_on_past": False,
+    "retries": 0,
+    "retry_delay": timedelta(minutes=5),
+}
+
+with DAG(
+    dag_id="odin_refdata_dataplex_bq_data_quality_dag",
+    start_date=datetime(2025, 11, 1),
+    schedule_interval=None,   # trigger after your load
+    catchup=False,
+    default_args=default_args,
+    tags=["dataplex", "data_quality"],
+) as dag:
+
+    create_scan_task = PythonOperator(
+        task_id="create_or_update_scan",
+        python_callable=create_or_update_scan,
+        provide_context=True,
+    )
+
+    run_scan_task = PythonOperator(
+        task_id="run_dq_scan",
+        python_callable=run_dq_scan,
+        provide_context=True,
+    )
+
+    check_status_task = PythonOperator(
+        task_id="check_dq_scan_status",
+        python_callable=check_dq_scan_status,
+        provide_context=True,
+    )
+
+    create_scan_task >> run_scan_task >> check_status_task
