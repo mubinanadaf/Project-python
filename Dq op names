@@ -1,0 +1,71 @@
+def run_dq_scan(**context):
+    """
+    Trigger a DataScan run and return the long-running operation name.
+    This name will be used by check_dq_scan_status to wait until completion.
+    """
+    headers = get_auth_headers()
+    url = (
+        f"https://dataplex.googleapis.com/v1/projects/{PROJECT_ID}"
+        f"/locations/{REGION}/dataScans/{SCAN_ID}:run"
+    )
+
+    response = requests.post(url, headers=headers)
+    print(f"Run DataScan response: {response.status_code} {response.text}")
+
+    if response.status_code not in (200, 201):
+        raise Exception(f"Failed to trigger DQ scan: {response.status_code} {response.text}")
+
+    resp_json = response.json()
+    op_name = resp_json.get("name")
+    if not op_name:
+        raise Exception(f"Run DQ scan did not return operation name: {resp_json}")
+
+    print(f"Run operation name: {op_name}")
+    # PythonOperator will push this return value to XCom
+    return op_name
+
+def check_dq_scan_status(**context):
+    """
+    Polls the long-running operation returned by run_dq_scan
+    until it is done. If operation has 'error', task fails.
+    """
+    headers = get_auth_headers()
+
+    ti = context["ti"]
+    op_name = ti.xcom_pull(task_ids="run_dq_scan")
+    if not op_name:
+        raise Exception("No operation name found in XCom from run_dq_scan")
+
+    op_url = f"https://dataplex.googleapis.com/v1/{op_name}"
+
+    timeout_minutes = 15
+    poll_interval_seconds = 30
+    deadline = time.time() + timeout_minutes * 60
+
+    last_resp = None
+
+    while True:
+        if time.time() > deadline:
+            raise TimeoutError(
+                f"Timed out waiting for DQ operation to finish; last_resp={last_resp}"
+            )
+
+        resp = requests.get(op_url, headers=headers)
+        last_resp = resp.text
+        print(f"Operation GET response: {resp.status_code} {resp.text}")
+
+        if resp.status_code != 200:
+            raise Exception(f"Failed to get operation: {resp.status_code} {resp.text}")
+
+        op_json = resp.json()
+        done = op_json.get("done", False)
+
+        if done:
+            # If there's an error, surface it
+            if "error" in op_json:
+                raise Exception(f"DQ operation finished with error: {op_json['error']}")
+            print("DQ operation completed successfully (SUCCEEDED).")
+            return
+
+        print("DQ operation still running... waiting...")
+        time.sleep(poll_interval_seconds)
