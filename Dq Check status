@@ -43,3 +43,59 @@ def check_dq_scan_status(**context):
         # Not in terminal state yet (e.g. PENDING / RUNNING / UNKNOWN)
         print("DQ scan still running... waiting...")
         time.sleep(poll_interval_seconds)
+.,.m.....
+
+def check_dq_scan_status(**context):
+    """
+    Polls Dataplex /jobs API for this DataScan and waits until the
+    most recent job is in a terminal state: SUCCEEDED / FAILED / CANCELLED / ABORTED.
+    """
+    headers = get_auth_headers()
+    url = (
+        f"https://dataplex.googleapis.com/v1/projects/{PROJECT_ID}"
+        f"/locations/{REGION}/dataScans/{SCAN_ID}/jobs"
+    )
+
+    timeout_minutes = 15
+    poll_interval_seconds = 30
+    deadline = time.time() + timeout_minutes * 60
+
+    last_state = None
+
+    while True:
+        if time.time() > deadline:
+            raise TimeoutError(
+                f"Timed out waiting for DQ job to finish; last_state={last_state}"
+            )
+
+        resp = requests.get(url, headers=headers)
+        print(f"Jobs GET response: {resp.status_code} {resp.text}")
+
+        if resp.status_code != 200:
+            raise Exception(f"Failed to get jobs: {resp.status_code} {resp.text}")
+
+        jobs = resp.json().get("jobs", [])
+        if not jobs:
+            # job may not be visible yet, keep waiting
+            print("No jobs returned yet. Waiting...")
+            time.sleep(poll_interval_seconds)
+            continue
+
+        # Dataplex returns jobs in reverse chronological order (latest first)
+        job = jobs[0]
+        state = job.get("state")
+        name = job.get("name")
+        last_state = state
+
+        print(f"Latest job name={name}, state={state}")
+
+        if state in ("SUCCEEDED", "FAILED", "CANCELLED", "ABORTED"):
+            if state == "SUCCEEDED":
+                print("DQ scan SUCCEEDED.")
+                return
+            else:
+                raise Exception(f"DQ scan finished in state {state}: {job}")
+
+        # still RUNNING / PENDING / UNKNOWN
+        print("DQ scan still running... waiting...")
+        time.sleep(poll_interval_seconds)
