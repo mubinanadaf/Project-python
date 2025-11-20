@@ -68,4 +68,54 @@ def check_dq_scan_status(**context):
             return
 
         print("DQ operation still running... waiting...")
-        time.sleep(poll_interval_seconds)
+        time.sleep(poll_interval_seconds
+
+..............
+
+
+def wait_for_dq_completion(**kwargs):
+    ti = kwargs["ti"]
+
+    # Get the return value of run_dq_scan
+    job_name = ti.xcom_pull(task_ids="run_dq_scan")  # or key="return_value"
+    if not job_name:
+        raise AirflowException("No job_name returned from run_dq_scan")
+
+    headers = get_auth_headers()
+    job_url = f"{DATAPLEX_BASE_URL}/{job_name}"
+
+    print(f"Polling DataScanJob at: {job_url}")
+
+    terminal_states = ["SUCCEEDED", "FAILED", "CANCELLED", "ABORTED"]
+    poll_interval_sec = 30
+    max_wait_sec = 1800
+    waited = 0
+    last_state = None
+
+    while waited < max_wait_sec:
+        resp = requests.get(job_url, headers=headers)
+        print(f"Job GET response: {resp.status_code} {resp.text}")
+        resp.raise_for_status()
+
+        job = resp.json()
+        state = job.get("state")
+        last_state = state
+        print(f"Current DataScanJob state = {state}")
+
+        if state in terminal_states:
+            if state == "SUCCEEDED":
+                print("DQ scan SUCCEEDED.")
+                ti.xcom_push(key="dq_job_result", value=job)
+                return
+            else:
+                raise AirflowException(
+                    f"DQ scan finished in state {state}. Job: {job}"
+                )
+
+        print(f"Still running… waiting {poll_interval_sec} sec…")
+        time.sleep(poll_interval_sec)
+        waited += poll_interval_sec
+
+    raise AirflowException(
+        f"Timed out after {max_wait_sec} sec waiting for job. Last state={last_state}"
+    )
