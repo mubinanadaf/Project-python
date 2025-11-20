@@ -1,0 +1,64 @@
+def wait_for_dq_completion(**kwargs):
+    from airflow.exceptions import AirflowException
+
+    ti = kwargs["ti"]
+    job_name = ti.xcom_pull(task_ids="run_dq_scan")
+
+    if not job_name:
+        raise AirflowException("No job_name from run_dq_scan()")
+
+    headers = get_auth_headers()
+
+    # Job State endpoint
+    job_url = f"{DATAPLEX_BASE_URL}/{job_name}"
+    dq_result_url = f"{DATAPLEX_BASE_URL}/{job_name}:getDataQualityResult"
+
+    terminal_states = ["SUCCEEDED", "FAILED", "CANCELLED", "ABORTED"]
+
+    while True:
+        # 1️⃣ CHECK JOB STATE
+        job_resp = requests.get(job_url, headers=headers)
+        job_resp.raise_for_status()
+        job_json = job_resp.json()
+        state = job_json.get("state")
+
+        print(f"Job state: {state}")
+
+        if state in terminal_states:
+            if state != "SUCCEEDED":
+                raise AirflowException(f"DQ Job ended with state={state}")
+
+            # 2️⃣ GET REAL DATA QUALITY RESULTS
+            dq_resp = requests.get(dq_result_url, headers=headers)
+            dq_resp.raise_for_status()
+            dq_json = dq_resp.json()
+
+            overall_passed = dq_json.get("passed")
+            rule_results = dq_json.get("ruleResults", [])
+
+            print("DataQualityResult:", dq_json)
+
+            # Fail if no rules found
+            if not rule_results:
+                raise AirflowException("ERROR: No ruleResults returned from Dataplex!")
+
+            # 3️⃣ Check individual rule results
+            failing_rules = [
+                r for r in rule_results if not r.get("passed")
+            ]
+
+            if failing_rules:
+                raise AirflowException(
+                    f"DQ rules failed: {failing_rules}"
+                )
+
+            if overall_passed is False:
+                raise AirflowException(
+                    f"Data quality overall failed: {overall_passed}"
+                )
+
+            print("All DQ rules PASSED.")
+            return
+
+        print("Still running... waiting 30 sec")
+        time.sleep(30)
