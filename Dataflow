@@ -1,0 +1,59 @@
+# dags/bq_to_bq_dataflow_dag.py
+from datetime import datetime, timedelta
+
+from airflow import DAG
+from airflow.providers.google.cloud.operators.dataflow import (
+    DataflowCreatePythonJobOperator,
+)
+
+PROJECT_ID = "sandbox-corp-odin-dev1-f930"
+REGION = "asia-south1"
+
+# Where you uploaded bq_to_bq_pipeline.py
+GCS_PYTHON_FILE = "gs://<COMPOSER_BUCKET>/dataflow/bq_to_bq_pipeline.py"
+
+# Dataflow temp & staging locations
+TEMP_LOCATION = "gs://<DATAFLOW_TEMP_BUCKET>/dataflow/temp"
+STAGING_LOCATION = "gs://<DATAFLOW_TEMP_BUCKET>/dataflow/staging"
+
+# BQ source & target from your earlier config
+INPUT_TABLE = f"{PROJECT_ID}.corp_sec.t_badge_events"
+OUTPUT_TABLE = f"{PROJECT_ID}.rto.t_badge_events_bq_bq"
+
+default_args = {
+    "owner": "airflow",
+    "depends_on_past": False,
+    "retries": 0,
+    "retry_delay": timedelta(minutes=2),
+}
+
+with DAG(
+    dag_id="bq_to_bq_dataflow",
+    description="BQ→BQ load using Dataflow Python pipeline",
+    schedule_interval=None,  # trigger manually or add cron
+    start_date=datetime(2025, 1, 1),
+    catchup=False,
+    default_args=default_args,
+    tags=["bq-bq", "dataflow"],
+) as dag:
+
+    bq_to_bq_dataflow = DataflowCreatePythonJobOperator(
+        task_id="run_bq_to_bq_dataflow",
+        py_file=GCS_PYTHON_FILE,
+        job_name="bq-to-bq-{{ ds_nodash }}",
+        location=REGION,
+        options={
+            # Dataflow pipeline options
+            "project": PROJECT_ID,
+            "region": REGION,
+            "temp_location": TEMP_LOCATION,
+            "staging_location": STAGING_LOCATION,
+
+            # Custom pipeline options (from BqToBqOptions)
+            "input_table": INPUT_TABLE,
+            "output_table": OUTPUT_TABLE,
+        },
+    )
+
+    # Only one task for now
+    bq_to_bq_dataflow
