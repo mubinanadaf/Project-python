@@ -1,0 +1,41 @@
+import argparse
+import logging
+
+import apache_beam as beam
+from apache_beam.options.pipeline_options import PipelineOptions
+
+
+class InMemoryOptions(PipelineOptions):
+    @classmethod
+    def _add_argparse_args(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--input_value",
+            type=int,
+            default=5,
+            help="Number to be squared in the pipeline.",
+        )
+
+
+def run(argv=None):
+    # Pick up the options that Dataflow passes (project, region, input_value, etc.)
+    pipeline_options = PipelineOptions()
+    custom_options = pipeline_options.view_as(InMemoryOptions)
+
+    value = custom_options.input_value
+    logging.warning(f"*** Received input_value={value} ***")
+
+    # Simple in-memory pipeline
+    with beam.Pipeline(options=pipeline_options) as p:
+        (
+            p
+            | "CreateValue" >> beam.Create([value])
+            | "Square" >> beam.Map(lambda x: x * x)
+            | "FormatResult" >> beam.Map(lambda x: f"Squared result is: {x}")
+            # 🔥 This actually prints into Dataflow worker logs
+            | "PrintResult" >> beam.Map(print)
+        )
+
+
+if __name__ == "__main__":
+    logging.getLogger().setLevel(logging.INFO)
+    run()
