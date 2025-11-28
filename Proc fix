@@ -1,0 +1,10 @@
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName("bq_to_bq").getOrCreate()
+
+# Use your existing bucket here
+BUCKET = "us-central1-cm-v3_sandbox-corp-odin-dev1-f930"
+
+# For Dataproc Serverless + BigQuery connector
+spark.conf.set("temporaryGcsBucket", BUCKET)
+spark.conf.set("persistentGcsBucket", BUCKET)
