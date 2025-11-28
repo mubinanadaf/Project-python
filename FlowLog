@@ -1,0 +1,58 @@
+import argparse
+import logging
+
+import apache_beam as beam
+from apache_beam.options.pipeline_options import PipelineOptions
+
+
+class InMemoryOptions(PipelineOptions):
+    @classmethod
+    def _add_argparse_args(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--input_value",
+            type=int,
+            default=5,
+            help="Number to be squared in the pipeline.",
+        )
+
+
+def run(argv=None):
+    logging.getLogger().setLevel(logging.INFO)
+
+    # Pick up everything Airflow passes on the command line
+    pipeline_options = PipelineOptions()
+
+    # 👇 LOG ALL EFFECTIVE OPTIONS
+    all_opts = pipeline_options.get_all_options()
+    logging.warning("*** EFFECTIVE PIPELINE OPTIONS ***")
+    for k, v in sorted(all_opts.items()):
+        logging.warning("  %s = %r", k, v)
+
+    custom_options = pipeline_options.view_as(InMemoryOptions)
+    value = custom_options.input_value
+    logging.warning("*** Received input_value = %s ***", value)
+
+    try:
+        p = beam.Pipeline(options=pipeline_options)
+        (
+            p
+            | "CreateValue" >> beam.Create([value])
+            | "Square" >> beam.Map(lambda x: x * x)
+            | "FormatResult" >> beam.Map(lambda x: f"Squared result is: {x}")
+            | "PrintResult" >> beam.Map(print)
+        )
+
+        # 👇 This will block until Dataflow job finishes (or fails)
+        result = p.run()
+        result.wait_until_finish()
+
+        logging.warning("*** PIPELINE FINISHED WITH STATE: %s ***", result.state)
+
+    except Exception:
+        # 👇 If anything goes wrong, we want a full stack trace in Airflow logs
+        logging.exception("*** PIPELINE FAILED WITH EXCEPTION ***")
+        raise  # re-raise so Airflow marks the task as FAILED
+
+
+if __name__ == "__main__":
+    run()
