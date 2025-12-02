@@ -1,0 +1,74 @@
+from datetime import datetime, timedelta
+
+from airflow import DAG
+from airflow.providers.google.cloud.operators.dataflow import (
+    DataflowCreatePythonJobOperator,
+)
+
+# ==== CHANGE THESE ONLY IF YOUR ENV IS DIFFERENT ====
+PROJECT_ID = "sandbox-corp-odin-dev1-f930"
+REGION = "us-central1"
+
+# Beam Python file in GCS (same path you used with gsutil cp)
+GCS_PYTHON_FILE = (
+    "gs://us-central1-cm-v3_sandbox-corp-odin-dev1-f930/dags/odin/common_functions/"
+    "in_memory_square_pipeline.py"
+)
+
+# Temp & staging bucket (must exist + SA has storage.objectCreator & viewer)
+TEMP_LOCATION = "gs://nonsrd1_sandbox-corp-odin-dev1-f930/dataflow/temp"
+STAGING_LOCATION = "gs://nonsrd1_sandbox-corp-odin-dev1-f930/dataflow/staging"
+
+# Subnetwork FULL URL (from your screenshot)
+SUBNETWORK = (
+    "https://www.googleapis.com/compute/v1/"
+    "projects/sandbox-networking-1988/regions/us-central1/"
+    "subnetworks/sandbox_netwg-gcp-02389221-us-cs-36-06-017"
+)
+# ====================================================
+
+default_args = {
+    "owner": "airflow",
+    "depends_on_past": False,
+    "retries": 0,
+    "retry_delay": timedelta(minutes=2),
+}
+
+with DAG(
+    dag_id="in_memory_square_dataflow_dag",
+    start_date=datetime(2025, 1, 1),
+    schedule=None,       # no schedule, trigger manually
+    catchup=False,
+    default_args=default_args,
+    tags=["dataflow", "in-memory"],
+) as dag:
+
+    in_memory_square = DataflowCreatePythonJobOperator(
+        task_id="run_in_memory_square",
+        py_file=GCS_PYTHON_FILE,
+        py_options=[],
+        job_name="in-memory-square-{{ ds_nodash }}",
+        location=REGION,
+        project_id=PROJECT_ID,
+
+        # Dataflow / Beam environment options
+        dataflow_default_options={
+            "project": PROJECT_ID,
+            "region": REGION,
+            "runner": "DataflowRunner",
+            "temp_location": TEMP_LOCATION,
+            "staging_location": STAGING_LOCATION,
+            "subnetwork": SUBNETWORK,
+        },
+
+        # Custom pipeline options defined in InMemoryOptions
+        options={
+            "input_value": 9,  # change this number to test
+        },
+
+        # Beam version (you can align with what you saw: 2.61.0)
+        py_requirements=["apache-beam[gcp]==2.61.0"],
+        py_interpreter="python3",
+        py_system_site_packages=False,
+        wait_until_finished=True,
+    )
