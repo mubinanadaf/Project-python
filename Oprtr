@@ -1,0 +1,9 @@
+from airflow.providers.google.cloud.operators.dataproc import DataprocCreateBatchOperator
+
+bq_transform = DataprocCreateBatchOperator(
+    task_id="lfcr_bq_transform",
+    project_id=PROJECT_ID,
+    region="us-central1",
+    batch=PYSPARK_BATCH,
+    batch_id="lfcr-bq-transform-{{ ds_nodash }}",
+)
