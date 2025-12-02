@@ -1,0 +1,82 @@
+from pyspark.sql import SparkSession, functions as F
+import sys
+
+
+def main():
+    if len(sys.argv) != 4:
+        print(
+            "Usage: lfcr_bq_transform.py <project_id> <dataset> <temp_gcs_bucket>"
+        )
+        sys.exit(1)
+
+    PROJECT_ID = sys.argv[1]
+    DATASET = sys.argv[2]
+    TEMP_GCS_BUCKET = sys.argv[3]
+
+    spark = (
+        SparkSession.builder
+        .appName("t_lfcr_demo_t_lfcr_order_demo_transform")
+        .getOrCreate()
+    )
+
+    # BigQuery connector needs a GCS bucket for staging
+    spark.conf.set("temporaryGcsBucket", TEMP_GCS_BUCKET)
+    spark.conf.set("persistentGcsBucket", TEMP_GCS_BUCKET)
+
+    # --- Table names ---
+    demo_table = f"{PROJECT_ID}.{DATASET}.t_lfcr_demo"
+    order_table = f"{PROJECT_ID}.{DATASET}.t_lfcr_order_demo"
+    target_table = f"{PROJECT_ID}.{DATASET}.t_lfcr_demo_order_summary"
+
+    print(f"Reading demo table: {demo_table}")
+    demo_df = (
+        spark.read.format("bigquery")
+        .option("table", demo_table)
+        .load()
+    )
+
+    print(f"Reading order table: {order_table}")
+    order_df = (
+        spark.read.format("bigquery")
+        .option("table", order_table)
+        .load()
+    )
+
+    # ---- Example transformations (adjust columns as per your schema) ----
+    # Aggregate orders per customer
+    order_agg_df = (
+        order_df.groupBy("customer_id")
+        .agg(
+            F.count("*").alias("total_orders"),
+            F.sum("order_amount").alias("total_order_amount"),
+            F.min("order_date").alias("first_order_date"),
+            F.max("order_date").alias("last_order_date"),
+        )
+    )
+
+    # Join with demo table on customer_id
+    result_df = (
+        demo_df.alias("d")
+        .join(order_agg_df.alias("o"), on="customer_id", how="inner")
+    )
+
+    # Optional: log a small sample to Dataproc / Airflow logs
+    print("===== Sample transformed rows (first 10) =====")
+    for row in result_df.limit(10).collect():
+        print(row)
+    print("===== End sample =====")
+
+    # ---- Write result back to BigQuery ----
+    print(f"Writing result to target table: {target_table}")
+    (
+        result_df.write.format("bigquery")
+        .option("table", target_table)
+        .mode("overwrite")  # or "append" if you prefer
+        .save()
+    )
+
+    print("Write completed successfully.")
+
+
+if __name__ == "__main__":
+    main()
