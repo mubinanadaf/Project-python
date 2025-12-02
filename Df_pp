@@ -1,0 +1,66 @@
+import argparse
+import logging
+
+import apache_beam as beam
+from apache_beam.options.pipeline_options import PipelineOptions
+
+
+class InMemoryOptions(PipelineOptions):
+    """Custom pipeline options for our simple pipeline."""
+    @classmethod
+    def _add_argparse_args(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--input_value",
+            type=int,
+            default=5,
+            help="Number to be squared in the pipeline.",
+        )
+
+
+def run(argv=None):
+    # Make sure logs show up in Airflow
+    logging.getLogger().setLevel(logging.INFO)
+
+    # Pick up ALL options passed from Airflow/Dataflow
+    pipeline_options = PipelineOptions(argv)
+
+    # Log all options so we can debug easily
+    all_opts = pipeline_options.get_all_options()
+    logging.warning("*** EFFECTIVE PIPELINE OPTIONS ***")
+    for k, v in sorted(all_opts.items()):
+        logging.warning("  %s = %r", k, v)
+
+    custom_options = pipeline_options.view_as(InMemoryOptions)
+    value = custom_options.input_value
+    logging.warning("*** Received input_value = %s ***", value)
+
+    try:
+        # Build pipeline
+        p = beam.Pipeline(options=pipeline_options)
+
+        (
+            p
+            | "CreateValue" >> beam.Create([value])
+            | "Square" >> beam.Map(lambda x: x * x)
+            | "FormatResult" >> beam.Map(lambda x: f"Squared result is: {x}")
+            | "PrintResult" >> beam.Map(print)
+        )
+
+        # Submit job
+        result = p.run()
+
+        # Log job id if DataflowRunner is used
+        job_id = getattr(result, "job_id", None)
+        logging.warning("*** SUBMITTED DATAFLOW JOB ID: %s ***", job_id)
+
+        # Wait until finish so errors propagate
+        result.wait_until_finish()
+        logging.warning("*** PIPELINE FINISHED WITH STATE: %s ***", result.state)
+
+    except Exception:
+        logging.exception("*** PIPELINE FAILED WITH EXCEPTION ***")
+        raise
+
+
+if __name__ == "__main__":
+    run()
