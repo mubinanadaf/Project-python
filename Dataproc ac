@@ -1,0 +1,33 @@
+
+Given a valid config entry for a job,
+When the DAG is triggered,
+Then the pipeline must read source and target table details from the config (not hard-coded in code).
+
+
+
+2. Transformation executed on Dataproc Serverless
+
+Given the config specifies a transformation script path (in GCS),
+When the DAG runs,
+Then an Airflow DataprocCreateBatchOperator must submit a Dataproc Serverless Spark batch which:
+
+Reads from the source BigQuery table(s),
+
+Applies the transformation logic in the PySpark script,
+
+Writes to the target BigQuery table.
+
+
+
+
+3. Successful end-to-end data flow
+
+Given valid config and available source tables,
+When the DAG completes successfully,
+Then:
+
+Rows are read from the configured source table(s),
+
+Transformations are applied,
+
+Data is written into the configured target table with correct row counts and basic data sanity (e.g., not empty unless expected).
