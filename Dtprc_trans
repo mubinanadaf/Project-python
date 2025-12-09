@@ -1,0 +1,95 @@
+from pyspark.sql import SparkSession, functions as F
+import sys
+
+
+def main():
+    if len(sys.argv) != 4:
+        print("Usage: lfcr_bq_transform.py <project_id> <dataset> <temp_bucket>")
+        sys.exit(1)
+
+    PROJECT_ID = sys.argv[1]
+    DATASET = sys.argv[2]
+    TEMP_BUCKET = sys.argv[3]
+
+    spark = (
+        SparkSession.builder
+        .appName("lfcr_demo_order_summary")
+        .getOrCreate()
+    )
+
+    # BigQuery connector temp storage
+    spark.conf.set("temporaryGcsBucket", TEMP_BUCKET)
+    spark.conf.set("persistentGcsBucket", TEMP_BUCKET)
+
+    demo_table = f"{PROJECT_ID}.{DATASET}.t_lfcr_demo"
+    order_table = f"{PROJECT_ID}.{DATASET}.t_lfcr_order_demo"
+    target_table = f"{PROJECT_ID}.{DATASET}.t_lfcr_demo_order_summary"
+
+    print(f"Reading Demo table: {demo_table}")
+    demo_df = (
+        spark.read.format("bigquery")
+        .option("table", demo_table)
+        .load()
+    )
+
+    print(f"Reading Order table: {order_table}")
+    order_df = (
+        spark.read.format("bigquery")
+        .option("table", order_table)
+        .load()
+    )
+
+    # Clean nulls for safe aggregation
+    order_df = order_df.na.fill({"total_amt": 0})
+    order_df = order_df.na.drop(subset=["customer_id"])
+    demo_df = demo_df.na.drop(subset=["customer_id"])
+
+    # Aggregate order details per customer
+    order_agg_df = (
+        order_df.groupBy("customer_id")
+        .agg(
+            F.count("*").alias("total_orders"),
+            F.sum("total_amt").alias("total_order_amount"),
+            F.min("order_date").alias("first_order_date"),
+            F.max("order_date").alias("last_order_date"),
+        )
+    )
+
+    # Join demo + order summary
+    result_df = (
+        demo_df.alias("d")
+        .join(order_agg_df.alias("o"), on="customer_id", how="inner")
+    )
+
+    # Log only a small sample – safe preview
+    print("===== Sample transformed rows (max 10) =====")
+    sample_df = (
+        result_df
+        .select(
+            "customer_id",
+            "customer_name",
+            "total_orders",
+            "total_order_amount",
+            "first_order_date",
+            "last_order_date",
+        )
+        .limit(10)
+    )
+    for row in sample_df.collect():
+        print(row.asDict())
+    print("===== End sample =====")
+
+    # Write result back to BigQuery (auto-creates table if not present)
+    print(f"Writing result to: {target_table}")
+    (
+        result_df.write.format("bigquery")
+        .option("table", target_table)
+        .mode("overwrite")  # can be driven by config if needed
+        .save()
+    )
+
+    print("Job completed successfully.")
+
+
+if __name__ == "__main__":
+    main()
