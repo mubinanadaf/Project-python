@@ -1,0 +1,54 @@
+from datetime import datetime
+from airflow import DAG
+from airflow.models import Variable
+from airflow.providers.google.cloud.operators.dataproc import DataprocCreateBatchOperator
+
+# Load config stored in Airflow Variables
+CONFIG = Variable.get("bq2bq_dataproc_config", deserialize_json=True)
+
+# Choose which config job to run
+# Later you can make this dynamic via dag_run.conf
+JOB_ID = "lfcr_demo_orders"
+
+job_cfg = CONFIG["jobs"][JOB_ID]
+
+PROJECT_ID = job_cfg["project_id"]
+REGION = job_cfg["region"]
+BATCH_ID = f"{JOB_ID}-{{{{ ds_nodash }}}}"
+
+# Build Dataproc Batch config dynamically from Cloud Variable
+PYSPARK_BATCH = {
+    "pyspark_batch": {
+        "main_python_file_uri": job_cfg["transformation_script_uri"],
+        "args": [
+            job_cfg["project_id"],
+            job_cfg["dataset"],
+            job_cfg["temp_gcs_bucket"],
+        ],
+    },
+    "environment_config": {
+        "execution_config": {
+            "subnetwork_uri": job_cfg["subnetwork_uri"],
+            "service_account": job_cfg["service_account"],
+        }
+    },
+    "runtime_config": {
+        "version": job_cfg.get("runtime_version", "2.0"),
+    },
+}
+
+with DAG(
+    dag_id="bq2bq_dataproc_serverless_config_based",
+    start_date=datetime(2025, 1, 1),
+    schedule=None,
+    catchup=False,
+    tags=["dataproc-serverless", "bq2bq", "config-driven"],
+) as dag:
+
+    run_bq_transform = DataprocCreateBatchOperator(
+        task_id="run_bq2bq_job",
+        project_id=PROJECT_ID,
+        region=REGION,
+        batch=PYSPARK_BATCH,
+        batch_id=BATCH_ID,
+    )
