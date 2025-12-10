@@ -1,0 +1,27 @@
+{
+  "jobs": {
+    "lfcr_demo_orders": {
+      "project_id": "sandbox-corp-odin-dev1-f930",
+      "region": "us-central1",
+
+      "dataset": "lfcr_demo",
+      "temp_gcs_bucket": "us-central1-cm-v3_sandbox-corp-odin-dev1-f930",
+
+      "transformation_script_uri": "gs://us-central1-cm-v3_sandbox-corp-odin-dev1-f930/common_functions/lfcr_bq_transform.py",
+
+      "write_mode": "overwrite",
+      "runtime_version": "2.0",
+
+      "service_account": "sa-sandbox-corp-odin-f930-cw@sandbox-corp-odin-dev1-f930.iam.gserviceaccount.com",
+      "subnetwork_uri": "projects/sandbox-corp-odin-dev1-f930/regions/us-central1/subnetworks/nonprod-net-snt-odin-0245389-01-usc1cmp-0001",
+
+      "spark_properties": {
+        "spark.executor.cores": "4",
+        "spark.executor.memory": "8g",
+        "spark.executor.instances": "4",
+        "spark.driver.cores": "4",
+        "spark.driver.memory": "4g"
+      }
+    }
+  }
+}
