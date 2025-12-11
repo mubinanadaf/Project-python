@@ -1,0 +1,18 @@
+⭐ If Dataproc Serverless manages the VM automatically, then why do we need Spark properties?
+
+Because:
+
+✔ We don't control infrastructure (VM types, nodes, cluster)
+
+BUT
+
+✔ We DO control the Spark runtime behavior inside the serverless environment
+
+Think of it like this:
+
+Serverless = Google chooses the machines
+
+Spark properties = YOU choose how Spark uses those machines
+
+
+So Spark properties still matter — a lot.
