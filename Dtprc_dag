@@ -52,3 +52,57 @@ with DAG(
         batch=PYSPARK_BATCH,
         batch_id=BATCH_ID,
     )
+......
+
+from datetime import datetime
+from airflow import DAG
+from airflow.models import Variable
+from airflow.providers.google.cloud.operators.dataproc import DataprocCreateBatchOperator
+
+
+CONFIG_VAR = "bq2bq_dataproc_config"
+
+with DAG(
+    dag_id="dataproc_serverless_run_all_jobs",
+    start_date=datetime(2025, 1, 1),
+    schedule=None,
+    catchup=False,
+    tags=["dataproc-serverless", "config-driven", "multi-job"],
+) as dag:
+
+    config = Variable.get(CONFIG_VAR, deserialize_json=True)
+    jobs = config.get("jobs", {})
+
+    if not jobs:
+        raise ValueError(f"No jobs found in Airflow Variable: {CONFIG_VAR}")
+
+    # One Dataproc Serverless Batch per job
+    for job_id, job_cfg in jobs.items():
+        batch = {
+            "pyspark_batch": {
+                "main_python_file_uri": job_cfg["transformation_script_uri"],
+                "args": [
+                    job_cfg["project_id"],
+                    job_cfg["dataset"],
+                    job_cfg["temp_gcs_bucket"],
+                ],
+            },
+            "environment_config": {
+                "execution_config": {
+                    "service_account": job_cfg["service_account"],
+                    "subnetwork_uri": job_cfg["subnetwork_uri"],
+                }
+            },
+            "runtime_config": {
+                "version": job_cfg.get("runtime_version", "2.0"),
+                "properties": job_cfg.get("spark_properties", {}),
+            },
+        }
+
+        DataprocCreateBatchOperator(
+            task_id=f"run_{job_id}",
+            project_id=job_cfg["project_id"],
+            region=job_cfg["region"],
+            batch=batch,
+            batch_id=f"{job_id}-{{{{ ds_nodash }}}}",
+        )
