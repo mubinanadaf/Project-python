@@ -1,0 +1,39 @@
+from datetime import datetime
+from airflow import DAG
+from airflow.models import Variable
+from airflow.providers.google.cloud.operators.dataflow import DataflowCreatePythonJobOperator
+
+CONFIG = Variable.get("bq2bq_dataflow_config", deserialize_json=True)
+
+with DAG(
+    dag_id="bq2bq_dataflow_config_based",
+    start_date=datetime(2025, 1, 1),
+    schedule=None,
+    catchup=False,
+    tags=["dataflow", "bq2bq", "config-driven"],
+) as dag:
+
+    for job_id, job_cfg in CONFIG["jobs"].items():
+
+        DataflowCreatePythonJobOperator(
+            task_id=f"run_{job_id}",
+            py_file="gs://us-central1-cm-v3_sandbox-corp-odin-dev1-f930/common_functions/lfcr_bq2bq_dataflow.py",
+            job_name=f"{job_id}-{{{{ ds_nodash }}}}",
+            project_id=job_cfg["project_id"],
+            region=job_cfg["region"],
+            options={
+                "project": job_cfg["project_id"],
+                "region": job_cfg["region"],
+                "source_dataset": job_cfg["source_dataset"],
+                "target_dataset": job_cfg["target_dataset"],
+                "demo_table": job_cfg["source_tables"]["demo"],
+                "order_table": job_cfg["source_tables"]["orders"],
+                "target_table": job_cfg["target_table"],
+                "temp_location": job_cfg["temp_location"],
+                "staging_location": job_cfg["staging_location"],
+                "subnetwork": job_cfg["subnetwork"],
+                "service_account_email": job_cfg["service_account"],
+                "max_workers": job_cfg["max_workers"],
+                "worker_machine_type": job_cfg["worker_machine_type"],
+            },
+        )
