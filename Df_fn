@@ -1,0 +1,75 @@
+import apache_beam as beam
+from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.io.gcp.bigquery import ReadFromBigQuery, WriteToBigQuery
+import argparse
+
+
+class JoinAndAggregate(beam.PTransform):
+    def expand(self, pcolls):
+        demo, orders = pcolls
+
+        demo_kv = demo | "DemoKV" >> beam.Map(lambda x: (x["customer_id"], x))
+        order_kv = orders | "OrderKV" >> beam.Map(lambda x: (x["customer_id"], x))
+
+        return (
+            {"demo": demo_kv, "orders": order_kv}
+            | "JoinDemoOrders" >> beam.CoGroupByKey()
+            | "Aggregate" >> beam.Map(self._aggregate)
+        )
+
+    def _aggregate(self, element):
+        customer_id, grouped = element
+        demo = grouped["demo"][0]
+        orders = grouped["orders"]
+
+        total_orders = len(orders)
+        total_amt = sum(o.get("total_amt", 0) or 0 for o in orders)
+
+        return {
+            "customer_id": customer_id,
+            "customer_name": demo.get("customer_name"),
+            "total_orders": total_orders,
+            "total_order_amount": total_amt,
+        }
+
+
+def run(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--project")
+    parser.add_argument("--region")
+    parser.add_argument("--source_dataset")
+    parser.add_argument("--target_dataset")
+    parser.add_argument("--demo_table")
+    parser.add_argument("--order_table")
+    parser.add_argument("--target_table")
+    args, beam_args = parser.parse_known_args(argv)
+
+    options = PipelineOptions(beam_args, save_main_session=True)
+
+    with beam.Pipeline(options=options) as p:
+
+        demo = (
+            p
+            | "ReadDemo" >> ReadFromBigQuery(
+                table=f"{args.project}:{args.source_dataset}.{args.demo_table}"
+            )
+        )
+
+        orders = (
+            p
+            | "ReadOrders" >> ReadFromBigQuery(
+                table=f"{args.project}:{args.source_dataset}.{args.order_table}"
+            )
+        )
+
+        result = (demo, orders) | "JoinAndAggregate" >> JoinAndAggregate()
+
+        result | "WriteBQ" >> WriteToBigQuery(
+            table=f"{args.project}:{args.target_dataset}.{args.target_table}",
+            write_disposition=beam.io.BigQueryDisposition.WRITE_TRUNCATE,
+            create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED,
+        )
+
+
+if __name__ == "__main__":
+    run()
