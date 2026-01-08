@@ -1,0 +1,28 @@
+{
+  "jobs": {
+    "lfcr_demo_orders": {
+      "project_id": "sandbox-corp-odin-dev1-f930",
+      "region": "us-central1",
+
+      "source_dataset": "lfcr_demo",
+      "target_dataset": "lfcr_demo",
+
+      "source_tables": {
+        "demo": "t_lfcr_demo",
+        "orders": "t_lfcr_order_demo"
+      },
+
+      "target_table": "t_lfcr_demo_order_summary",
+
+      "temp_gcs_bucket": "us-central1-cm-v3_sandbox-corp-odin-dev1-f930",
+      "staging_location": "gs://us-central1-cm-v3_sandbox-corp-odin-dev1-f930/dataflow/staging",
+      "temp_location": "gs://us-central1-cm-v3_sandbox-corp-odin-dev1-f930/dataflow/temp",
+
+      "service_account": "sa-sandbox-corp-odin-f930-cw@sandbox-corp-odin-dev1-f930.iam.gserviceaccount.com",
+      "subnetwork": "regions/us-central1/subnetworks/nonprod-net-snt-odin-0245389-01-usc1cmp-0001",
+
+      "max_workers": 5,
+      "worker_machine_type": "n1-standard-4"
+    }
+  }
+}
