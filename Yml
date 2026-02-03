@@ -1,0 +1,29 @@
+- job_id: t_itmapp_sn_wsd_core_boma_type_sanitized_app_scd2
+    source:
+      dataset : cpg_wsd_stg
+      table : t_itmapp_sn_wsd_core_boma_type_sanitized_app
+    target:
+      dataset : cpg_wsd_cnf
+      table : t_itmapp_sn_wsd_core_boma_type_sanitized_app_scd2
+
+    write:
+      mode: scd2
+      merge_keys: ["sys_id"]
+
+      scd2:
+        row_hash_col: row_hash
+        valid_from_col: valid_from
+        valid_to_col: valid_to
+        is_active_col: is_active
+        open_end_date: "9999-12-31"
+
+        # optional (keep if you want):
+        effective_from_expression: "CURRENT_TIMESTAMP()"
+        expire_to_expression: "CURRENT_TIMESTAMP()"
+
+    transformations:
+      deduplicate:
+        keys: ["sys_id"]
+        order_by:
+          column: sys_updated_on
+          direction: desc
