@@ -1,0 +1,61 @@
+elif mode == "scd2":
+    bq_client = bigquery.Client(project=project_id)
+
+    merge_keys = job["write"]["merge_keys"]
+    scd2_cfg = job["write"]["scd2"]
+
+    row_hash_col = scd2_cfg.get("row_hash_col", "row_hash")
+    valid_from_col = scd2_cfg.get("valid_from_col", "valid_from")
+    valid_to_col = scd2_cfg.get("valid_to_col", "valid_to")
+    is_active_col = scd2_cfg.get("is_active_col", "is_active")
+    open_end_date = scd2_cfg.get("open_end_date", "9999-12-31")
+
+    eff_from_expr = scd2_cfg.get("effective_from_expression", "CURRENT_TIMESTAMP()")
+    expire_to_expr = scd2_cfg.get("expire_to_expression", eff_from_expr)
+
+    # BigQuery expects `project.dataset.table`
+    src_sql_tbl = src_tbl.replace(":", ".")
+    tgt_sql_tbl = tgt_tbl.replace(":", ".")
+
+    # join condition on keys
+    on_clause = " AND ".join([f"T.{k} = S.{k}" for k in merge_keys])
+
+    # compare only against currently active record
+    active_cond = f"T.{is_active_col} = TRUE"
+    changed_cond = f"IFNULL(T.{row_hash_col}, '') != IFNULL(S.{row_hash_col}, '')"
+
+    # 1) Expire old active row if changed
+    expire_sql = f"""
+    MERGE `{tgt_sql_tbl}` T
+    USING `{src_sql_tbl}` S
+    ON {on_clause}
+    WHEN MATCHED AND {active_cond} AND ({changed_cond}) THEN
+      UPDATE SET
+        T.{is_active_col} = FALSE,
+        T.{valid_to_col} = {expire_to_expr}
+    """
+    print(expire_sql)
+    bq_client.query(expire_sql).result()
+
+    # 2) Insert new row for new keys OR changed keys
+    # insert list = df.columns + SCD2 cols (we add these three in select)
+    insert_cols = ", ".join([f"`{c}`" for c in df.columns] + [f"`{valid_from_col}`", f"`{valid_to_col}`", f"`{is_active_col}`"])
+    select_cols = ", ".join([f"S.`{c}`" for c in df.columns] + [
+        f"{eff_from_expr} AS `{valid_from_col}`",
+        f"TIMESTAMP('{open_end_date}') AS `{valid_to_col}`",
+        f"TRUE AS `{is_active_col}`"
+    ])
+
+    insert_sql = f"""
+    INSERT INTO `{tgt_sql_tbl}` ({insert_cols})
+    SELECT {select_cols}
+    FROM `{src_sql_tbl}` S
+    LEFT JOIN `{tgt_sql_tbl}` T
+      ON {on_clause}
+      AND {active_cond}
+    WHERE
+      T.{merge_keys[0]} IS NULL
+      OR ({changed_cond})
+    """
+    print(insert_sql)
+    bq_client.query(insert_sql).result()
