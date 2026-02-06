@@ -1,0 +1,18 @@
+# Build list of columns to hash (exclude keys + scd2 cols if they exist)
+exclude_cols = set(merge_keys + [row_hash_col, valid_from_col, valid_to_col, is_current_col])
+
+hash_cols = [c for c in df.columns if c not in exclude_cols]
+
+# Build STRUCT with column refs (NOT 'strings')
+struct_expr = ",\n      ".join([f"S.`{c}`" for c in hash_cols])
+
+row_hash_expr = f"TO_HEX(SHA256(TO_JSON_STRING(STRUCT(\n      {struct_expr}\n    ))))"
+
+src_using_sql = f"""
+(
+  SELECT
+    S.*,
+    {row_hash_expr} AS `{row_hash_col}`
+  FROM `{src_sql_tbl}` S
+)
+"""
