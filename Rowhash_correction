@@ -1,0 +1,11 @@
+exclude_cols = set(merge_keys + [row_hash_col, valid_from_col, valid_to_col, is_current_col])
+hash_cols = [c for c in df.columns if c not in exclude_cols]
+
+if not hash_cols:
+    raise ValueError("No columns left to hash for SCD2")
+
+# SAFE hash: hash JSON representation of selected columns
+hash_struct = ", ".join([f"`{c}`" for c in hash_cols])
+hash_expr = f"TO_HEX(SHA256(TO_JSON_STRING(STRUCT({hash_struct}))))"
+
+src_using_sql = f"(SELECT *, {hash_expr} AS `{row_hash_col}` FROM `{src_sql_tbl}`)"
