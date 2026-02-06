@@ -1,0 +1,94 @@
+elif mode == "scd2":
+    bq_client = bigquery.Client(project=project_id)
+
+    merge_keys = job["write"]["merge_keys"]
+    scd2_cfg = job["write"]["scd2"]
+
+    # --- column names (defaults as per your setup) ---
+    row_hash_col = scd2_cfg.get("row_hash_col", "row_hash")
+    valid_from_col = scd2_cfg.get("valid_from_col", "valid_from")
+    valid_to_col = scd2_cfg.get("valid_to_col", "valid_to")
+    is_current_col = scd2_cfg.get("is_current_col", "is_current")
+    open_end_date = scd2_cfg.get("open_end_date", "9999-12-31")
+
+    # Your schema screenshots show STRING for dates -> keep expressions as STRING
+    eff_from_expr = scd2_cfg.get("effective_from_expression", "CAST(CURRENT_TIMESTAMP() AS STRING)")
+    expire_to_expr = scd2_cfg.get("expire_to_expression", eff_from_expr)
+
+    # BigQuery expects project.dataset.table
+    src_sql_tbl = src_tbl.replace(":", ".")
+    tgt_sql_tbl = tgt_tbl.replace(":", ".")
+
+    # join condition on keys
+    on_clause = " AND ".join([f"T.{k} = S.{k}" for k in merge_keys])
+
+    # ------------------------------------------------------------------
+    # IMPORTANT FIX:
+    # Source table may NOT have row_hash. So compute it inside USING subquery.
+    # We'll hash all df.columns except keys and scd2 audit columns.
+    # ------------------------------------------------------------------
+    exclude_cols = set(merge_keys + [row_hash_col, valid_from_col, valid_to_col, is_current_col])
+    hash_cols = [c for c in df.columns if c not in exclude_cols]
+
+    if not hash_cols:
+        raise ValueError(
+            f"SCD2 cannot compute row_hash because no hash columns remain. "
+            f"df.columns={df.columns}, exclude_cols={sorted(list(exclude_cols))}"
+        )
+
+    # Build a stable string hash over the chosen columns
+    # CONCAT() is fine; we add separators to reduce accidental collisions.
+    hash_expr = "TO_HEX(SHA256(CONCAT(" + ", ".join(
+        [f"'||', IFNULL(CAST(`{c}` AS STRING), '')" for c in hash_cols]
+    ) + ")))"
+
+    # This derived table will now expose S.row_hash_col even if base doesn't have it
+    src_using_sql = f"(SELECT *, {hash_expr} AS `{row_hash_col}` FROM `{src_sql_tbl}`)"
+
+    # compare only against currently active record in target (Y/N)
+    active_cond = f"IFNULL(T.{is_current_col}, 'N') = 'Y'"
+    changed_cond = f"IFNULL(T.{row_hash_col}, '') != IFNULL(S.{row_hash_col}, '')"
+
+    # 1) Expire old active row if changed (only updates existing active row)
+    expire_sql = f"""
+    MERGE `{tgt_sql_tbl}` T
+    USING {src_using_sql} S
+    ON {on_clause}
+    WHEN MATCHED AND {active_cond} AND ({changed_cond}) THEN
+      UPDATE SET
+        T.{is_current_col} = 'N',
+        T.{valid_to_col} = {expire_to_expr}
+    """
+
+    print(expire_sql)
+    bq_client.query(expire_sql).result()
+
+    # 2) Insert new row for new keys OR changed keys
+    # insert list = df.columns + SCD2 cols (we add these three in select)
+    insert_cols = ", ".join([f"`{c}`" for c in df.columns] + [f"`{valid_from_col}`", f"`{valid_to_col}`", f"`{is_current_col}`"])
+
+    # valid_to is STRING in your schema -> keep as STRING
+    valid_to_value_expr = scd2_cfg.get("open_end_date_expression", f"'{open_end_date}'")
+
+    select_cols = ", ".join(
+        [f"S.`{c}`" for c in df.columns] + [
+            f"{eff_from_expr} AS `{valid_from_col}`",
+            f"{valid_to_value_expr} AS `{valid_to_col}`",
+            f"'Y' AS `{is_current_col}`"
+        ]
+    )
+
+    insert_sql = f"""
+    INSERT INTO `{tgt_sql_tbl}` ({insert_cols})
+    SELECT {select_cols}
+    FROM {src_using_sql} S
+    LEFT JOIN `{tgt_sql_tbl}` T
+      ON {on_clause}
+     AND {active_cond}
+    WHERE
+      T.{merge_keys[0]} IS NULL
+      OR ({changed_cond})
+    """
+
+    print(insert_sql)
+    bq_client.query(insert_sql).result()
