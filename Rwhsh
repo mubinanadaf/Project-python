@@ -1,0 +1,115 @@
+elif mode == "scd2":
+    from google.cloud import bigquery
+
+    bq_client = bigquery.Client(project=project_id)
+
+    merge_keys = job["write"]["merge_keys"]
+    scd2_cfg = job["write"]["scd2"]
+
+    # Column names (from your schema)
+    row_hash_col   = scd2_cfg.get("row_hash_col", "row_hash")
+    valid_from_col = scd2_cfg.get("valid_from_col", "valid_from")
+    valid_to_col   = scd2_cfg.get("valid_to_col", "valid_to")
+    is_current_col = scd2_cfg.get("is_current_col", "is_current")
+
+    # open-ended date for valid_to
+    open_end_date  = scd2_cfg.get("open_end_date", "9999-12-31")
+
+    # BigQuery expects `project.dataset.table`
+    src_sql_tbl = src_tbl.replace(":", ".")
+    tgt_sql_tbl = tgt_tbl.replace(":", ".")
+
+    # ----------------------------
+    # Approach-2: compute row_hash BEFORE MERGE
+    # ----------------------------
+    # Exclude merge keys + scd2 cols + audit/system cols from hash columns
+    exclude_cols = set(merge_keys + [
+        row_hash_col, valid_from_col, valid_to_col, is_current_col,
+        "sys_created_on", "sys_created_by", "sys_updated_on", "sys_updated_by"
+    ])
+
+    # df.columns must exist (Spark DF has .columns, Pandas DF has .columns)
+    df_cols = list(df.columns)
+    hash_cols = [c for c in df_cols if c not in exclude_cols]
+
+    if not hash_cols:
+        raise ValueError(
+            f"SCD2 cannot compute {row_hash_col} because no hash columns remain. "
+            f"df.columns={df_cols}, exclude_cols={sorted(list(exclude_cols))}"
+        )
+
+    # ---- Compute row_hash in dataframe ----
+    # If df is Spark:
+    try:
+        from pyspark.sql import DataFrame as SparkDataFrame  # type: ignore
+        is_spark = isinstance(df, SparkDataFrame)
+    except Exception:
+        is_spark = False
+
+    if is_spark:
+        from pyspark.sql.functions import sha2, concat_ws, col
+
+        df = df.withColumn(
+            row_hash_col,
+            sha2(concat_ws("||", *[col(c).cast("string") for c in hash_cols]), 256)
+        )
+    else:
+        # Pandas
+        import hashlib
+
+        def _hash_row(r):
+            return hashlib.sha256("||".join(str(r[c]) for c in hash_cols).encode()).hexdigest()
+
+        df[row_hash_col] = df.apply(_hash_row, axis=1)
+
+    # NOTE:
+    # At this point you must ensure df (with row_hash) is written to src_sql_tbl (staging table)
+    # using your existing write/load method in the pipeline.
+
+    # ----------------------------
+    # Build conditions
+    # ----------------------------
+    on_clause = " AND ".join([f"T.{k} = S.{k}" for k in merge_keys])
+
+    # Active flag is Y/N
+    active_cond  = f"IFNULL(T.{is_current_col}, 'N') = 'Y'"
+    changed_cond = f"IFNULL(T.{row_hash_col}, '') != IFNULL(S.{row_hash_col}, '')"
+
+    # ----------------------------
+    # 1) Expire old active row if changed
+    # ----------------------------
+    expire_sql = f"""
+    MERGE `{tgt_sql_tbl}` T
+    USING `{src_sql_tbl}` S
+    ON {on_clause}
+    WHEN MATCHED
+      AND {active_cond}
+      AND {changed_cond}
+    THEN UPDATE SET
+      T.{is_current_col} = 'N',
+      T.{valid_to_col} = CURRENT_TIMESTAMP()
+    """
+    print(expire_sql)
+    bq_client.query(expire_sql).result()
+
+    # ----------------------------
+    # 2) Insert new rows for new keys OR changed keys
+    # ----------------------------
+    # We insert all staging columns (S.*) and append SCD2 cols
+    insert_sql = f"""
+    INSERT INTO `{tgt_sql_tbl}`
+    SELECT
+      S.*,
+      CURRENT_TIMESTAMP() AS {valid_from_col},
+      TIMESTAMP('{open_end_date}') AS {valid_to_col},
+      'Y' AS {is_current_col}
+    FROM `{src_sql_tbl}` S
+    LEFT JOIN `{tgt_sql_tbl}` T
+      ON {on_clause}
+      AND {active_cond}
+    WHERE
+      T.{merge_keys[0]} IS NULL
+      OR ({changed_cond})
+    """
+    print(insert_sql)
+    bq_client.query(insert_sql).result()
