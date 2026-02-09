@@ -1,0 +1,89 @@
+elif mode == "scd2":
+    from google.cloud import bigquery
+
+    bq_client = bigquery.Client(project=project_id)
+
+    merge_keys = job["write"]["merge_keys"]
+    scd2_cfg = job["write"]["scd2"]
+
+    row_hash_col   = scd2_cfg.get("row_hash_col", "row_hash")
+    valid_from_col = scd2_cfg.get("valid_from_col", "valid_from")
+    valid_to_col   = scd2_cfg.get("valid_to_col", "valid_to")
+    is_current_col = scd2_cfg.get("is_current_col", "is_current")
+
+    open_end_date  = scd2_cfg.get("open_end_date", "9999-12-31")
+
+    src_sql_tbl = src_tbl.replace(":", ".")
+    tgt_sql_tbl = tgt_tbl.replace(":", ".")
+
+    # JOIN condition
+    on_clause = " AND ".join([f"T.{k} = S.{k}" for k in merge_keys])
+
+    # Active + changed conditions (Y/N)
+    active_cond = f"IFNULL(T.{is_current_col}, 'N') = 'Y'"
+
+    # ---------- choose hash columns ----------
+    # Exclude merge keys + scd2 columns + common audit columns from hash
+    exclude_cols = set(merge_keys + [
+        row_hash_col, valid_from_col, valid_to_col, is_current_col,
+        "sys_created_on", "sys_created_by", "sys_updated_on", "sys_updated_by"
+    ])
+
+    df_cols = list(df.columns)
+    hash_cols = [c for c in df_cols if c not in exclude_cols]
+
+    if not hash_cols:
+        raise ValueError(
+            f"SCD2 cannot compute {row_hash_col} because no hash columns remain. "
+            f"df.columns={df_cols}, exclude_cols={sorted(list(exclude_cols))}"
+        )
+
+    # ---------- Build BigQuery hash expression ----------
+    # Make a stable struct from S columns, cast to STRING so hash is stable
+    # Use backticks to be safe for any column names like `name`
+    struct_items = ", ".join([f"CAST(S.`{c}` AS STRING) AS `{c}`" for c in hash_cols])
+
+    row_hash_expr = f"TO_HEX(SHA256(TO_JSON_STRING(STRUCT({struct_items}))))"
+
+    # Source subquery that adds row_hash as a computed column
+    src_using_sql = f"(SELECT S.*, {row_hash_expr} AS {row_hash_col} FROM `{src_sql_tbl}` S)"
+
+    changed_cond = f"IFNULL(T.{row_hash_col}, '') != IFNULL(S.{row_hash_col}, '')"
+
+    # ----------------------------
+    # 1) Expire old active row if changed
+    # ----------------------------
+    expire_sql = f"""
+    MERGE `{tgt_sql_tbl}` T
+    USING {src_using_sql} S
+    ON {on_clause}
+    WHEN MATCHED
+      AND {active_cond}
+      AND ({changed_cond})
+    THEN UPDATE SET
+      T.{is_current_col} = 'N',
+      T.{valid_to_col} = CAST(CURRENT_TIMESTAMP() AS STRING)
+    """
+    print(expire_sql)
+    bq_client.query(expire_sql).result()
+
+    # ----------------------------
+    # 2) Insert new row for new keys OR changed keys
+    # ----------------------------
+    insert_sql = f"""
+    INSERT INTO `{tgt_sql_tbl}`
+    SELECT
+      S.*,
+      CAST(CURRENT_TIMESTAMP() AS STRING) AS {valid_from_col},
+      CAST(TIMESTAMP('{open_end_date}') AS STRING) AS {valid_to_col},
+      'Y' AS {is_current_col}
+    FROM {src_using_sql} S
+    LEFT JOIN `{tgt_sql_tbl}` T
+      ON {on_clause}
+      AND {active_cond}
+    WHERE
+      T.{merge_keys[0]} IS NULL
+      OR ({changed_cond})
+    """
+    print(insert_sql)
+    bq_client.query(insert_sql).result()
