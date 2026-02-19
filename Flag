@@ -1,0 +1,65 @@
+yaml
+
+scd2:
+  row_hash_col: row_hash
+  valid_from_col: valid_from
+  valid_to_col: valid_to
+  is_current_col: is_current
+  dml_flag_col: dml_flag
+  open_end_date: "9999-12-31"
+.........
+
+in code:
+
+dml_flag_col = scd2_cfg.get("dml_flag_col", "dml_flag")
+
+.......
+
+modify expire sql
+
+active_cond = f"IFNULL(T.{is_current_col}, 'N') = 'Y'"
+changed_cond = f"IFNULL(T.{row_hash_col}, '') != IFNULL(S.{row_hash_col}, '')"
+
+expire_sql = f"""
+MERGE `{tgt_sql_tbl}` AS T
+USING {src_using_sql} AS S
+ON {on_clause}
+AND {active_cond}
+
+WHEN MATCHED AND ({changed_cond}) THEN
+UPDATE SET
+    T.{is_current_col} = 'N',
+    T.{valid_to_col} = CURRENT_TIMESTAMP(),
+    T.{dml_flag_col} = 'D'
+"""
+
+.......
+
+insert sql
+insert_sql = f"""
+INSERT INTO `{tgt_sql_tbl}`
+SELECT
+    S.*,
+    CURRENT_TIMESTAMP() AS {valid_from_col},
+    TIMESTAMP('{open_end_date}') AS {valid_to_col},
+    'Y' AS {is_current_col},
+
+    CASE
+        WHEN T.{merge_keys[0]} IS NULL THEN 'I'
+        ELSE 'U'
+    END AS {dml_flag_col}
+
+FROM {src_using_sql} S
+
+LEFT JOIN `{tgt_sql_tbl}` T
+ON {on_clause}
+AND {active_cond}
+
+WHERE
+    T.{merge_keys[0]} IS NULL
+    OR ({changed_cond})
+"""
+
+........
+
+
