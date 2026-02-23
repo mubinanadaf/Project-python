@@ -1,0 +1,8 @@
+def get_bq_columns_in_order(bq_client, project_id, dataset, table):
+    sql = f"""
+    SELECT column_name
+    FROM `{project_id}.{dataset}.INFORMATION_SCHEMA.COLUMNS`
+    WHERE table_name = '{table}'
+    ORDER BY ordinal_position
+    """
+    return [row["column_name"] for row in bq_client.query(sql).result()]
