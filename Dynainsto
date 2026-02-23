@@ -1,0 +1,48 @@
+tgt_dataset = tgt_tbl.split(".")[0]
+tgt_table = tgt_tbl.split(".")[1]
+
+tgt_cols = get_bq_columns_in_order(bq_client, project_id, tgt_dataset, tgt_table)
+
+# map expressions for special SCD2/audit columns
+special_expr = {
+    valid_from_col: f"CAST(CURRENT_TIMESTAMP() AS STRING)",
+    valid_to_col: f"CAST(TIMESTAMP('{open_end_date}') AS STRING)",
+    is_current_col: "'Y'",
+    dml_flag_col: f"""
+        CASE
+          WHEN T.{merge_keys[0]} IS NULL THEN 'I'
+          ELSE 'U'
+        END
+    """,
+    row_hash_col: f"S.{row_hash_col}",
+    # if you have newline in target but not in source:
+    "newline": "''"
+}
+
+# Build SELECT expressions in the exact order of target columns
+select_exprs = []
+for c in tgt_cols:
+    if c in special_expr:
+        select_exprs.append(f"{special_expr[c]} AS {c}")
+    else:
+        # if column exists in source => take from S, else NULL
+        if c in df.columns:
+            select_exprs.append(f"S.{c}")
+        else:
+            select_exprs.append(f"CAST(NULL AS STRING) AS {c}")  # safe default (change type casting if needed)
+
+insert_sql = f"""
+INSERT INTO `{tgt_sql_tbl}` ({", ".join([f"`{c}`" for c in tgt_cols])})
+SELECT
+  {", ".join(select_exprs)}
+FROM {src_using_sql} S
+LEFT JOIN `{tgt_sql_tbl}` T
+  ON {on_clause}
+ AND {active_cond}
+WHERE
+  T.{merge_keys[0]} IS NULL
+  OR ({changed_cond})
+"""
+
+print(insert_sql)
+bq_client.query(insert_sql).result()
