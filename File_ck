@@ -1,0 +1,9 @@
+audit_columns = None
+
+try:
+    get_metadata_config(audit_schema_file)   # 👈 this is the line after try
+    LOGGER.info(f"Audit schema found for {final_table}")
+    audit_columns = audit_schema_file
+except FileNotFoundError:
+    LOGGER.info(f"No audit schema found for {final_table}")
+    audit_columns = None
