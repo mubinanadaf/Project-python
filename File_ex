@@ -1,0 +1,27 @@
+import os
+
+schema_dir = 'dags/odin/cpg/wsd/schemas/confirmed'
+audit_schema_dir = 'dags/odin/cpg/wsd/schemas/audit'
+
+schema_file = f'{schema_dir}/{json_file_nm}.json'
+
+# Default
+audit_columns = None
+
+# Resolve full path using same approach as get_metadata_config
+current_dir = os.path.dirname(os.path.dirname(__file__))
+parent_dir = os.path.dirname(current_dir)
+
+audit_file_relative = f'{audit_schema_dir}/{json_file_nm}.json'
+
+audit_file_full_path = os.path.join(
+    parent_dir,
+    audit_file_relative
+)
+
+# Check if exists
+if os.path.exists(audit_file_full_path):
+    LOGGER.info(f"Audit schema found for {final_table}")
+    audit_columns = audit_file_relative
+else:
+    LOGGER.info(f"No audit schema found for {final_table}")
