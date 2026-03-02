@@ -1,0 +1,71 @@
+active_cond = f"T.{valid_to_col} = CAST(TIMESTAMP('{open_end_date}') AS STRING)"
+
+
+if date only then
+active_cond = f"T.{valid_to_col} = '{open_end_date}'"
+
+.....
+
+expire
+expire_sql = f"""
+MERGE `{tgt_sql_tbl}` T
+USING {src_using_sql} S
+ON {on_clause}
+AND {active_cond}
+
+WHEN MATCHED
+AND IFNULL(T.{row_hash_col}, '') != IFNULL(S.{row_hash_col}, '')
+THEN UPDATE SET
+  T.{valid_to_col} = CAST(CURRENT_TIMESTAMP() AS STRING)
+"""
+
+.....
+
+
+insert_d_sql = f"""
+INSERT INTO `{tgt_sql_tbl}`
+SELECT
+  T.* REPLACE(
+    'D' AS {dml_flag_col},
+    CAST(TIMESTAMP('{open_end_date}') AS STRING) AS {valid_to_col}
+  )
+FROM `{tgt_sql_tbl}` T
+JOIN {src_using_sql} S
+ON {on_clause}
+WHERE
+  T.{valid_to_col} != CAST(TIMESTAMP('{open_end_date}') AS STRING)
+  AND IFNULL(T.{row_hash_col}, '') != IFNULL(S.{row_hash_col}, '')
+"""
+
+insert_sql = f"""
+INSERT INTO `{tgt_sql_tbl}`
+SELECT
+  S.sys_id,
+  S.name,
+  S.sys_domain,
+  S.active,
+  S.sys_created_on,
+  S.sys_created_by,
+  S.sys_updated_on,
+  S.sys_updated_by,
+  S.newline,
+  S.cdm_process_id,
+  S.task_id,
+  S.business_datetime,
+  CAST(CURRENT_TIMESTAMP() AS STRING) AS {valid_from_col},
+  CAST(TIMESTAMP('{open_end_date}') AS STRING) AS {valid_to_col},
+  CASE
+      WHEN T.{merge_keys[0]} IS NULL THEN 'I'
+      ELSE 'U'
+  END AS {dml_flag_col},
+  S.{row_hash_col}
+FROM {src_using_sql} S
+LEFT JOIN `{tgt_sql_tbl}` T
+ON {on_clause}
+AND T.{valid_to_col} = CAST(TIMESTAMP('{open_end_date}') AS STRING)
+WHERE
+  T.{merge_keys[0]} IS NULL
+  OR IFNULL(T.{row_hash_col}, '') != IFNULL(S.{row_hash_col}, '')
+"""
+
+
