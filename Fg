@@ -1,0 +1,23 @@
+select_exprs = []
+for c in tgt_fields:
+    if c == valid_from_col:
+        select_exprs.append(f"{run_ts_expr} AS {valid_from_col}")
+    elif c == valid_to_col:
+        select_exprs.append(f"{open_end_expr} AS {valid_to_col}")
+    elif c == dml_flag_col:
+        exists_cond = " AND ".join([f"T2.{k} = S.{k}" for k in merge_keys])
+        select_exprs.append(f"""
+        CASE
+            WHEN EXISTS (
+                SELECT 1
+                FROM `{tgt_sql_tbl}` T2
+                WHERE {exists_cond}
+            ) THEN 'U'
+            ELSE 'I'
+        END AS {dml_flag_col}
+        """.strip())
+    else:
+        if c in src_fields:
+            select_exprs.append(f"S.{c} AS {c}")
+        else:
+            select_exprs.append(f"NULL AS {c}")
