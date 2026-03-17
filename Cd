@@ -1,0 +1,163 @@
+elif mode == "scd2":
+    bq_client = bigquery.Client(project=project_id)
+
+    merge_keys = job["write"]["merge_keys"]
+    scd2_cfg = job["write"].get("scd2", {})
+
+    row_hash_col = scd2_cfg.get("row_hash_col", "row_hash")
+    valid_from_col = scd2_cfg.get("valid_from_col", "valid_from")
+    valid_to_col = scd2_cfg.get("valid_to_col", "valid_to")
+    dml_flag_col = scd2_cfg.get("dml_flag_col", "dml_flag")
+    open_end_date = scd2_cfg.get("open_end_date", "9999-12-31 00:00:00")
+    modified_process_id_col = scd2_cfg.get("modified_process_id_col", "modified_cdm_process_id")
+    process_id_source_col = "cdm_process_id"
+
+    eff_from_expr = scd2_cfg.get("effective_from_expression", "CURRENT_DATETIME()")
+    expire_to_expr = scd2_cfg.get("expire_to_expression", eff_from_expr)
+
+    run_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    run_ts_expr = f"DATETIME('{run_ts}')"
+
+    # BigQuery expects `project.dataset.table`
+    src_sql_tbl = src_tbl.replace(":", ".")
+    tgt_sql_tbl = tgt_tbl.replace(":", ".")
+
+    # Target schema order to use in INSERT
+    tgt_fields = [f.name for f in bq_client.get_table(tgt_sql_tbl).schema]
+
+    # Source columns to decide whether to use S.col or NULL
+    src_fields = set([f.name for f in bq_client.get_table(src_sql_tbl).schema])
+
+    # Build SELECT expressions in target order for source-driven insert (I/U)
+    select_exprs = []
+    for c in tgt_fields:
+        if c == valid_from_col:
+            select_exprs.append(f"{run_ts_expr} AS {valid_from_col}")
+
+        elif c == valid_to_col:
+            select_exprs.append(f"DATETIME('{open_end_date}') AS {valid_to_col}")
+
+        elif c == dml_flag_col:
+            exists_cond = " AND ".join([f"T2.{k} = S.{k}" for k in merge_keys])
+            select_exprs.append(f"""
+            CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM `{tgt_sql_tbl}` T2
+                    WHERE {exists_cond}
+                      AND T2.{valid_to_col} = DATETIME('{open_end_date}')
+                      AND IFNULL(T2.{dml_flag_col}, '') != 'D'
+                )
+                THEN 'U'
+                ELSE 'I'
+            END AS {dml_flag_col}
+            """.strip())
+
+        elif c == modified_process_id_col:
+            exists_cond = " AND ".join([f"T2.{k} = S.{k}" for k in merge_keys])
+
+            if process_id_source_col in src_fields:
+                select_exprs.append(f"""
+                CASE
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM `{tgt_sql_tbl}` T2
+                        WHERE {exists_cond}
+                          AND T2.{valid_to_col} = DATETIME('{open_end_date}')
+                          AND IFNULL(T2.{dml_flag_col}, '') != 'D'
+                    )
+                    THEN CAST(S.{process_id_source_col} AS STRING)
+                    ELSE ''
+                END AS {modified_process_id_col}
+                """.strip())
+            else:
+                select_exprs.append(f"'' AS {modified_process_id_col}")
+
+        else:
+            if c in src_fields:
+                select_exprs.append(f"S.{c} AS {c}")
+            else:
+                select_exprs.append(f"NULL AS {c}")
+
+    insert_cols = ", ".join([f"`{c}`" for c in tgt_fields])
+    select_list = ",\n    ".join(select_exprs)
+
+    # join condition on keys
+    on_clause = " AND ".join([f"T.{k} = S.{k}" for k in merge_keys])
+
+    open_end_expr = f"DATETIME('{open_end_date}')"
+
+    # active = open-ended and not already marked D
+    active_cond = f"T.{valid_to_col} = {open_end_expr} AND IFNULL(T.{dml_flag_col}, '') != 'D'"
+    changed_cond = f"IFNULL(T.{row_hash_col}, '') != IFNULL(S.{row_hash_col}, '')"
+
+    src_using_sql = f"""
+    (
+        SELECT
+            S.*
+        FROM `{src_sql_tbl}` AS S
+    )
+    """
+
+    # 1) Expire old active row if same key arrives and data changed
+    expire_sql = f"""
+    MERGE `{tgt_sql_tbl}` AS T
+    USING {src_using_sql} AS S
+    ON {on_clause} AND {active_cond}
+    WHEN MATCHED AND ({changed_cond}) THEN
+        UPDATE SET
+            T.{valid_to_col} = {run_ts_expr},
+            T.{modified_process_id_col} = CAST(S.{process_id_source_col} AS STRING)
+    """
+    print(expire_sql)
+    bq_client.query(expire_sql).result()
+
+    # 2) Insert latest source-driven rows as I/U
+    insert_sql = f"""
+    INSERT INTO `{tgt_sql_tbl}` ({insert_cols})
+    SELECT
+        {select_list}
+    FROM {src_using_sql} S
+    LEFT JOIN `{tgt_sql_tbl}` T
+        ON {on_clause} AND {active_cond}
+    WHERE
+        T.`{merge_keys[0]}` IS NULL
+        OR ({changed_cond})
+    """
+    print(insert_sql)
+    bq_client.query(insert_sql).result()
+
+    # 3) Expire active rows missing in today's source
+    expire_missing_sql = f"""
+    UPDATE `{tgt_sql_tbl}` T
+    SET
+        T.{valid_to_col} = {run_ts_expr}
+    WHERE
+        {active_cond}
+        AND NOT EXISTS (
+            SELECT 1
+            FROM {src_using_sql} S
+            WHERE {" AND ".join([f"T.{k} = S.{k}" for k in merge_keys])}
+        )
+    """
+    print(expire_missing_sql)
+    bq_client.query(expire_missing_sql).result()
+
+    # 4) Insert open-ended D row for keys missing in today's source
+    insert_d_sql = f"""
+    INSERT INTO `{tgt_sql_tbl}`
+    SELECT
+        T.* REPLACE(
+            'D' AS {dml_flag_col},
+            {run_ts_expr} AS {valid_from_col},
+            {open_end_expr} AS {valid_to_col}
+        )
+    FROM `{tgt_sql_tbl}` T
+    LEFT JOIN {src_using_sql} S
+    ON {" AND ".join([f"T.{k} = S.{k}" for k in merge_keys])}
+    WHERE
+        T.{valid_to_col} = {run_ts_expr}
+        AND S.{merge_keys[0]} IS NULL
+    """
+    print(insert_d_sql)
+    bq_client.query(insert_d_sql).result()
