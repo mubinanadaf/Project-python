@@ -1,0 +1,19 @@
+elif c == dml_flag_col:
+    exists_cond = " AND ".join([f"T2.{k} = S.{k}" for k in merge_keys])
+
+    select_exprs.append(f"""
+    CASE
+        WHEN EXISTS (
+            SELECT 1
+            FROM `{tgt_sql_tbl}` T2
+            WHERE {exists_cond}
+              AND IFNULL(T2.{dml_flag_col}, '') != 'D'
+              AND (
+                    T2.{valid_to_col} = {open_end_expr}
+                    OR T2.{valid_to_col} = {run_ts_expr}
+                  )
+        )
+        THEN 'U'
+        ELSE 'I'
+    END AS {dml_flag_col}
+    """.strip())
