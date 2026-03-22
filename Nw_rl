@@ -1,0 +1,13 @@
+expire_returned_d_sql = f"""
+UPDATE `{tgt_sql_tbl}` T
+SET
+    T.{valid_to_col} = {run_dt_expr},
+    T.{modified_process_id_col} = CAST(S.{process_id_source_col} AS STRING)
+FROM {src_using_sql} S
+WHERE
+    {" AND ".join([f"T.{k} = S.{k}" for k in merge_keys])}
+    AND T.{valid_to_col} = {open_end_expr}
+    AND IFNULL(T.{dml_flag_col}, '') = 'D'
+"""
+print(expire_returned_d_sql)
+bq_client.query(expire_returned_d_sql).result()
