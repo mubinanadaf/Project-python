@@ -1,0 +1,65 @@
+cte
+
+
+negative_nso_quarter AS (
+    SELECT
+        bmr_brand,
+        year_num,
+        quarter_num,
+        sub_channel,
+        COUNTIF(applied_monthly_nso < 0) > 0 AS has_negative_nso
+    FROM sephora_cn_monthly
+    GROUP BY
+        bmr_brand,
+        year_num,
+        quarter_num,
+        sub_channel;
+
+Join it inside scope_calc_before_fx using the same four fields
+
+
+LEFT JOIN negative_nso_quarter neg
+    ON neg.bmr_brand = b.bmr_brand
+   AND neg.year_num = b.year_num
+   AND neg.quarter_num = b.quarter_num
+   AND neg.sub_channel = b.sub_channel
+
+
+
+
+
+
+
+),
+
+
+Then replace the repeated EXISTS conditions with:
+
+
+WHEN COALESCE(neg.has_negative_nso, FALSE)
+
+monthly weight
+
+
+WHEN COALESCE(neg.has_negative_nso, FALSE)
+THEN SAFE_DIVIDE(
+    CAST(1 AS NUMERIC),
+    CAST(3 AS NUMERIC)
+
+or sold_value_local_before_fx:
+
+WHEN COALESCE(neg.has_negative_nso, FALSE)
+THEN SAFE_DIVIDE(
+    b.applied_br_quarterly_nso,
+    CAST(3 AS NUMERIC)
+)
+
+
+
+)or applied_monthly_nso:
+
+
+WHEN COALESCE(neg.has_negative_nso, FALSE)
+THEN CAST(NULL AS NUMERIC)
+
+
