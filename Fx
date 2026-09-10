@@ -141,3 +141,77 @@ WHERE UPPER(TRIM(bmr_brand)) = 'LANEIGE'
   AND UPPER(TRIM(sub_channel)) = 'SEPHORA'
 ORDER BY sub_market, month_date;
 
+
+
+SELECT
+    b.sub_market,
+    b.bmr_brand,
+    b.year_num,
+    b.quarter_num,
+    b.sub_channel,
+    b.month_date,
+
+    scm.applied_monthly_nso,
+    scq.sephora_cn_quarterly_nso,
+
+    qff.has_negative_monthly_nso,
+    qff.has_zero_monthly_phasing,
+    qff.apply_equal_split,
+
+    b.applied_br_quarterly_nso,
+
+    SAFE_DIVIDE(
+        b.applied_br_quarterly_nso,
+        CAST(3 AS NUMERIC)
+    ) AS expected_equal_split,
+
+    CASE
+        WHEN COALESCE(qff.apply_equal_split, FALSE)
+        THEN SAFE_DIVIDE(
+            b.applied_br_quarterly_nso,
+            CAST(3 AS NUMERIC)
+        )
+        ELSE b.applied_br_quarterly_nso
+             * COALESCE(
+                 SAFE_DIVIDE(
+                     scm.applied_monthly_nso,
+                     scq.sephora_cn_quarterly_nso
+                 ),
+                 CAST(0 AS NUMERIC)
+             )
+    END AS test_sold_value_local
+
+FROM br_month_grid b
+
+LEFT JOIN sephora_cn_monthly scm
+    ON b.bmr_brand = scm.bmr_brand
+   AND (
+        b.bmr_brand <> var_other_luxe_bmr_brand
+        OR b.source_brand = scm.source_brand
+   )
+   AND b.month_date = scm.month_date
+   AND b.sub_channel = scm.sub_channel
+
+LEFT JOIN sephora_cn_quarterly scq
+    ON b.bmr_brand = scq.bmr_brand
+   AND (
+        b.bmr_brand <> var_other_luxe_bmr_brand
+        OR b.source_brand = scq.source_brand
+   )
+   AND b.year_num = scq.year_num
+   AND b.quarter_num = scq.quarter_num
+   AND b.sub_channel = scq.sub_channel
+
+LEFT JOIN quarter_fallback_flag qff
+    ON qff.bmr_brand = b.bmr_brand
+   AND qff.year_num = b.year_num
+   AND qff.quarter_num = b.quarter_num
+   AND qff.sub_channel = b.sub_channel
+
+WHERE UPPER(TRIM(b.bmr_brand)) = 'LANEIGE'
+  AND b.year_num = 2026
+  AND b.quarter_num = 1
+  AND UPPER(TRIM(b.sub_channel)) = 'SEPHORA'
+ORDER BY b.sub_market, b.month_date;
+
+
