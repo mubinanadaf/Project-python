@@ -215,3 +215,97 @@ WHERE UPPER(TRIM(b.bmr_brand)) = 'LANEIGE'
 ORDER BY b.sub_market, b.month_date;
 
 
+SELECT
+    b.market,
+    b.sub_market,
+    b.bmr_brand,
+    b.brand_name,
+    b.source_brand,
+    b.year_num,
+    b.quarter_num,
+    b.sub_channel,
+    b.month_date,
+
+    scm.applied_monthly_nso,
+    scq.sephora_cn_quarterly_nso,
+    b.applied_br_quarterly_nso,
+
+    -- Check negative NSO fallback
+    EXISTS (
+        SELECT 1
+        FROM sephora_cn_monthly scm2
+        WHERE scm2.bmr_brand = b.bmr_brand
+          AND (
+                b.bmr_brand <> var_other_luxe_bmr_brand
+                OR scm2.source_brand = b.source_brand
+              )
+          AND scm2.year_num = b.year_num
+          AND scm2.quarter_num = b.quarter_num
+          AND scm2.sub_channel = b.sub_channel
+          AND scm2.applied_monthly_nso < 0
+    ) AS has_negative_monthly_nso,
+
+    -- Check zero-phasing fallback
+    EXISTS (
+        SELECT 1
+        FROM sephora_cn_monthly scm2
+        WHERE scm2.bmr_brand = b.bmr_brand
+          AND (
+                b.bmr_brand <> var_other_luxe_bmr_brand
+                OR scm2.source_brand = b.source_brand
+              )
+          AND scm2.year_num = b.year_num
+          AND scm2.quarter_num = b.quarter_num
+          AND scm2.sub_channel = b.sub_channel
+          AND scm2.applied_monthly_nso = 0
+    ) AS has_zero_monthly_nso,
+
+    -- Check whether one of the three months is missing
+    (
+        SELECT COUNT(DISTINCT scm3.month_date)
+        FROM sephora_cn_monthly scm3
+        WHERE scm3.bmr_brand = b.bmr_brand
+          AND (
+                b.bmr_brand <> var_other_luxe_bmr_brand
+                OR scm3.source_brand = b.source_brand
+              )
+          AND scm3.year_num = b.year_num
+          AND scm3.quarter_num = b.quarter_num
+          AND scm3.sub_channel = b.sub_channel
+    ) AS available_month_count,
+
+    SAFE_DIVIDE(
+        b.applied_br_quarterly_nso,
+        CAST(3 AS NUMERIC)
+    ) AS expected_equal_split
+
+FROM br_month_grid b
+
+LEFT JOIN sephora_cn_monthly scm
+    ON b.bmr_brand = scm.bmr_brand
+   AND (
+        b.bmr_brand <> var_other_luxe_bmr_brand
+        OR b.source_brand = scm.source_brand
+   )
+   AND b.month_date = scm.month_date
+   AND b.sub_channel = scm.sub_channel
+
+LEFT JOIN sephora_cn_quarterly scq
+    ON b.bmr_brand = scq.bmr_brand
+   AND (
+        b.bmr_brand <> var_other_luxe_bmr_brand
+        OR b.source_brand = scq.source_brand
+   )
+   AND b.year_num = scq.year_num
+   AND b.quarter_num = scq.quarter_num
+   AND b.sub_channel = scq.sub_channel
+
+WHERE UPPER(TRIM(b.bmr_brand)) = 'LANEIGE'
+  AND b.year_num = 2026
+  AND b.quarter_num = 1
+  AND UPPER(TRIM(b.sub_channel)) = 'SEPHORA'
+ORDER BY b.sub_market, b.month_date;
+
+
+
+
