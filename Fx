@@ -63,3 +63,29 @@ WHEN COALESCE(neg.has_negative_nso, FALSE)
 THEN CAST(NULL AS NUMERIC)
 
 
+SELECT
+    scm.bmr_brand,
+    scm.year_num,
+    scm.quarter_num,
+    scm.sub_channel,
+    scm.month_date,
+    scm.applied_monthly_nso,
+    neg.has_negative_monthly_nso
+FROM sephora_cn_monthly scm
+LEFT JOIN negative_nso_quarter neg
+    ON UPPER(TRIM(neg.bmr_brand))
+         = UPPER(TRIM(scm.bmr_brand))
+   AND neg.year_num = scm.year_num
+   AND neg.quarter_num = scm.quarter_num
+   AND UPPER(TRIM(neg.sub_channel))
+         = UPPER(TRIM(scm.sub_channel))
+WHERE UPPER(TRIM(scm.bmr_brand)) = 'LANEIGE'
+  AND scm.year_num = 2026
+  AND scm.quarter_num = 1
+ORDER BY scm.month_date;
+
+
+
+
+
+
