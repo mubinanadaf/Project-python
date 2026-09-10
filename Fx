@@ -86,6 +86,58 @@ ORDER BY scm.month_date;
 
 
 
+SELECT
+    market,
+    sub_market,
+    bmr_brand,
+    brand_name,
+    source_brand,
+    manufacturer,
+    year_num,
+    quarter_num,
+    sub_channel,
+    currency_code,
+    applied_br_quarterly_nso,
+    SAFE_DIVIDE(
+        applied_br_quarterly_nso,
+        CAST(3 AS NUMERIC)
+    ) AS expected_monthly_equal_split,
+    has_br_data
+FROM br_base_converted
+WHERE UPPER(TRIM(bmr_brand)) = 'LANEIGE'
+  AND year_num = 2026
+  AND quarter_num = 1
+  AND UPPER(TRIM(sub_channel)) = 'SEPHORA'
+ORDER BY sub_market;
 
 
+
+
+
+
+
+
+
+SELECT
+    market,
+    sub_market,
+    bmr_brand,
+    brand_name,
+    source_brand,
+    year_num,
+    quarter_num,
+    sub_channel,
+    month_date,
+    applied_br_quarterly_nso,
+    SAFE_DIVIDE(
+        applied_br_quarterly_nso,
+        CAST(3 AS NUMERIC)
+    ) AS expected_monthly_equal_split,
+    has_br_data
+FROM br_month_grid
+WHERE UPPER(TRIM(bmr_brand)) = 'LANEIGE'
+  AND year_num = 2026
+  AND quarter_num = 1
+  AND UPPER(TRIM(sub_channel)) = 'SEPHORA'
+ORDER BY sub_market, month_date;
 
