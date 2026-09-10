@@ -330,5 +330,28 @@ WHERE UPPER(TRIM(b.bmr_brand)) = 'LANEIGE'
 ORDER BY b.sub_market, b.month_date;
 
 
-
+SELECT
+    bmr_brand,
+    year_num,
+    quarter_num,
+    sub_channel,
+    ARRAY_AGG(
+        STRUCT(month_date, applied_monthly_nso)
+        ORDER BY month_date
+    ) AS monthly_values,
+    COUNTIF(applied_monthly_nso = 0) AS zero_month_count,
+    COUNTIF(applied_monthly_nso < 0) AS negative_month_count
+FROM sephora_cn_monthly
+GROUP BY
+    bmr_brand,
+    year_num,
+    quarter_num,
+    sub_channel
+HAVING COUNTIF(applied_monthly_nso = 0) > 0
+   AND COUNTIF(applied_monthly_nso < 0) = 0
+ORDER BY
+    year_num,
+    quarter_num,
+    bmr_brand,
+    sub_channel;
 
