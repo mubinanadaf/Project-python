@@ -1,0 +1,9 @@
+WHERE
+      (
+          UPPER(sub_channel) IN ('DTR', 'OFFLINE OTHERS')
+          AND UPPER(scope) = 'CN'
+      )
+   OR (
+          UPPER(sub_channel) NOT IN ('DTR', 'OFFLINE OTHERS')
+          AND UPPER(scope) IN ('CN', 'CN+HK')
+      )
