@@ -59,3 +59,59 @@ filtered_brand_data AS (
 SELECT * EXCEPT (non_zero_period_count)
 FROM filtered_brand_data
 WHERE non_zero_period_count > 0;
+
+
+
+
+
+-/-------
+WITH brand_data AS (
+    SELECT
+        fact.data_source,
+        fact.market,
+        'CN+HK' AS sub_market,
+        fact.date,
+        fact.source_brand,
+        dpb.bmr_brand,
+        dpb.bmr_manufacturer,
+        dpc.bmr_channel_type AS channel,
+        dpc.memo_2 AS sub_channel,
+        SUM(fact.sold_value_local) AS sold_value_local
+
+    FROM `nasia-onedata-dna-apac-np.sdds_sellout_panel_eu.fact_sellout_ldpanel_cn` fact
+
+    LEFT JOIN `nasia-onedata-dna-apac-np.sdds_product_panel_eu.dim_panel_brand` dpb
+        ON fact.brand_id = dpb.universe_id
+       AND fact.market = dpb.market
+
+    LEFT JOIN `nasia-onedata-dna-apac-np.sdds_customer_panel_eu.dim_panel_channel` dpc
+        ON fact.channel_id = dpc.channel_id
+       AND fact.market = dpc.market
+
+    INNER JOIN `nasia-onedata-dna-apac-np.sdds_common_panel_eu.cfg_brand_display_seq_cn` dsb
+        ON dpb.bmr_brand = dsb.bmr_brand_name
+       AND CASE
+               WHEN dpb.bmr_brand = 'OTHER LUXE'
+                   THEN fact.source_brand = dsb.display_brand_name
+               ELSE TRUE
+           END
+       AND dsb.channel = 'Offline'
+
+    WHERE fact.data_source = 'chn_ld_panel_ansheet_mtd_nso'
+      AND fact.sub_market = 'CN'
+      AND fact.source_channel2 = 'DS+BTQ'
+      AND dpb.bmr_manufacturer <> 'L’OREAL LLD'
+
+    GROUP BY ALL
+),
+
+final_data AS (
+    SELECT *
+    FROM brand_data
+    QUALIFY COUNTIF(COALESCE(sold_value_local, 0) <> 0)
+        OVER (PARTITION BY bmr_brand) > 0
+)
+
+SELECT *
+FROM final_data;
+
